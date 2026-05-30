@@ -10,7 +10,7 @@
     "dev": "echo TQ-010 skeleton only - core match logic is not implemented yet.",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo No core match tests configured yet for the TQ-010 skeleton.",
-    "lint": "echo No core match lint configured yet for the TQ-010 skeleton."
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src --max-warnings=0"
   }
 }

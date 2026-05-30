@@ -10,7 +10,7 @@
     "dev": "echo TQ-010 skeleton only - shared types are not implemented yet.",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo No shared types tests configured yet for the TQ-010 skeleton.",
-    "lint": "echo No shared types lint configured yet for the TQ-010 skeleton."
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src --max-warnings=0"
   }
 }

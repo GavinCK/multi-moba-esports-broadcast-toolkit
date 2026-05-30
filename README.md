@@ -1,19 +1,22 @@
 # Multi-MOBA Esports Broadcast Toolkit
 
-This repository is the v0.1 workspace skeleton for a local-first, manual-first esports broadcast control system.
+This repository is the v0.1 workspace baseline for a local-first, manual-first esports broadcast control system.
 
 The architecture is intentionally game-agnostic at the core. Universal Ban/Pick logic belongs in `packages/core-draft`, production control belongs in `packages/core-production`, and game-specific behavior belongs under `games/*`.
 
 ## Current Status
 
-This is the TQ-010 monorepo skeleton only.
+This is the TQ-011 baseline tooling setup. It keeps the TQ-010 monorepo skeleton intact and adds standard verification commands.
 
 Implemented in this step:
 
 - pnpm workspace layout.
 - Placeholder apps, packages, and game folders.
 - Root TypeScript config.
-- Minimal workspace scripts.
+- TypeScript build and typecheck scripts for every workspace package.
+- ESLint baseline for placeholder TypeScript sources.
+- Vitest baseline tests for placeholder workspace exports.
+- Root `verify` script that runs lint, typecheck, test, and build.
 
 Not implemented yet:
 
@@ -61,7 +64,7 @@ pnpm lint
 pnpm verify
 ```
 
-For this skeleton task, `dev`, `test`, and `lint` scripts are placeholders and do not claim runtime feature completeness. Real server, dashboard, overlay, lint, and test behavior are scheduled for later tasks in `docs/TASK_QUEUE.md`.
+For this baseline task, `dev` scripts still report placeholder status because server, dashboard, and overlay runtimes are not implemented yet. `lint`, `typecheck`, `test`, `build`, and `verify` are real verification commands for the current placeholder workspace.
 
 ## v0.1 Guardrails
 
