@@ -1,5 +1,4 @@
-export const coreMatchWorkspace = {
-  name: "@mmbt/core-match",
-  status: "skeleton",
-  logicImplemented: false
-} as const;
+export * from "./constants";
+export * from "./helpers";
+export type * from "./types";
+export * from "./validation";

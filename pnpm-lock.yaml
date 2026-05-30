@@ -40,7 +40,11 @@ importers:
 
   packages/core-draft: {}
 
-  packages/core-match: {}
+  packages/core-match:
+    dependencies:
+      '@mmbt/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
 
   packages/core-overlay: {}
 

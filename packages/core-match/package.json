@@ -2,15 +2,18 @@
   "name": "@mmbt/core-match",
   "version": "0.0.0",
   "private": true,
-  "description": "Core match workspace placeholder for the Multi-MOBA Esports Broadcast Toolkit.",
+  "description": "Game-agnostic match validation and helpers for the Multi-MOBA Esports Broadcast Toolkit.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "echo TQ-010 skeleton only - core match logic is not implemented yet.",
+    "dev": "echo Core match package contains validation helpers only.",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src --max-warnings=0"
+  },
+  "dependencies": {
+    "@mmbt/shared-types": "workspace:*"
   }
 }
