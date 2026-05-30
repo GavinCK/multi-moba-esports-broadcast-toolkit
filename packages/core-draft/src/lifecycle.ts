@@ -12,6 +12,7 @@ import type {
 
 import { COMPLETE_ACTION_STATUSES } from "./constants";
 import { fail, ok, type DraftEngineResult } from "./errors";
+import { createTimerForPhase, pauseTimer, resumeTimer } from "./timer";
 import { validateDraftRuleset } from "./validation";
 
 export interface CreateDraftStateInput {
@@ -59,14 +60,6 @@ function createHistoryEntry(
     action,
     before,
     after
-  };
-}
-
-function createLifecycleTimer(): DraftTimerState {
-  return {
-    isRunning: false,
-    remainingSeconds: 0,
-    originalSeconds: 0
   };
 }
 
@@ -141,6 +134,7 @@ export function createDraftState(input: CreateDraftStateInput): DraftEngineResul
 
   const timestamp = getNow(input);
   const draftId = input.id ?? `draft:${input.gameId}:${input.ruleset.id}`;
+  const timer = createTimerForPhase(input.ruleset.phases[0] ?? null, timestamp, "READY");
   const baseState = {
     history: []
   };
@@ -165,7 +159,7 @@ export function createDraftState(input: CreateDraftStateInput): DraftEngineResul
     gameCode: input.ruleset.gameCode,
     status: "READY",
     currentPhaseIndex: 0,
-    timer: createLifecycleTimer(),
+    timer,
     actions: createActionSlots(input.ruleset, timestamp),
     lockedHeroIds: [],
     bannedHeroIds: [],
@@ -196,7 +190,9 @@ export function startDraft(
     });
   }
 
-  if (!getCurrentPhase(state, ruleset)) {
+  const currentPhase = getCurrentPhase(state, ruleset);
+
+  if (!currentPhase) {
     return fail({
       code: "draft-no-current-phase",
       message: "Draft cannot start without a current phase."
@@ -219,6 +215,7 @@ export function startDraft(
   return ok({
     ...state,
     status: "LIVE",
+    timer: createTimerForPhase(currentPhase, timestamp, "LIVE"),
     history,
     updatedAt: timestamp
   });
@@ -237,6 +234,12 @@ export function pauseDraft(
   }
 
   const timestamp = getNow(options);
+  const timer = pauseTimer(state.timer, timestamp);
+
+  if (!timer.ok) {
+    return fail(timer.error);
+  }
+
   const history = [
     ...state.history,
     createHistoryEntry(
@@ -252,6 +255,7 @@ export function pauseDraft(
   return ok({
     ...state,
     status: "PAUSED",
+    timer: timer.value,
     history,
     updatedAt: timestamp
   });
@@ -270,6 +274,12 @@ export function resumeDraft(
   }
 
   const timestamp = getNow(options);
+  const timer = resumeTimer(state.timer, timestamp);
+
+  if (!timer.ok) {
+    return fail(timer.error);
+  }
+
   const history = [
     ...state.history,
     createHistoryEntry(
@@ -285,6 +295,7 @@ export function resumeDraft(
   return ok({
     ...state,
     status: "LIVE",
+    timer: timer.value,
     history,
     updatedAt: timestamp
   });
@@ -318,7 +329,7 @@ export function resetDraft(
   }
 
   const timestamp = getNow(options);
-  const timer = createLifecycleTimer();
+  const timer = createTimerForPhase(ruleset.phases[0] ?? null, timestamp, "READY");
   const history = [
     ...state.history,
     createHistoryEntry(

@@ -128,8 +128,8 @@ describe("createDraftState and selectors", () => {
     expect(draft.currentPhaseIndex).toBe(0);
     expect(draft.timer).toEqual({
       isRunning: false,
-      remainingSeconds: 0,
-      originalSeconds: 0
+      remainingSeconds: 30,
+      originalSeconds: 30
     });
     expect(draft.actions.map((action) => action.id)).toEqual([
       "blue-ban-1:slot-0",
@@ -175,7 +175,7 @@ describe("createDraftState and selectors", () => {
 });
 
 describe("draft lifecycle transitions", () => {
-  it("starts a READY draft without starting timer runtime behavior", () => {
+  it("starts a READY draft and initializes the current phase timer", () => {
     const readyDraft = createReadyDraft();
     const result = startDraft(readyDraft, ruleset, {
       now: timestamp,
@@ -186,7 +186,12 @@ describe("draft lifecycle transitions", () => {
     expect(liveDraft).not.toBe(readyDraft);
     expect(readyDraft.status).toBe("READY");
     expect(liveDraft.status).toBe("LIVE");
-    expect(liveDraft.timer).toEqual(readyDraft.timer);
+    expect(liveDraft.timer).toEqual({
+      isRunning: true,
+      phaseStartedAt: timestamp,
+      remainingSeconds: 30,
+      originalSeconds: 30
+    });
     expect(liveDraft.history.at(-1)?.action).toBe("DRAFT_STARTED");
   });
 
@@ -202,9 +207,8 @@ describe("draft lifecycle transitions", () => {
     expect(JSON.stringify(liveDraft)).toBe(before);
   });
 
-  it("pauses a LIVE draft as a state-only lifecycle transition", () => {
+  it("pauses a LIVE draft and freezes the current phase timer", () => {
     const liveDraft = createLiveDraft();
-    const beforeTimer = liveDraft.timer;
     const pausedDraft = unwrap(
       pauseDraft(liveDraft, {
         now: "2026-05-30T12:00:10.000Z",
@@ -213,17 +217,22 @@ describe("draft lifecycle transitions", () => {
     );
 
     expect(pausedDraft.status).toBe("PAUSED");
-    expect(pausedDraft.timer).toEqual(beforeTimer);
+    expect(pausedDraft.timer).toEqual({
+      isRunning: false,
+      phaseStartedAt: undefined,
+      pausedAt: "2026-05-30T12:00:10.000Z",
+      remainingSeconds: 20,
+      originalSeconds: 30
+    });
     expect(pausedDraft.history.at(-1)?.action).toBe("DRAFT_PAUSED");
   });
 
-  it("resumes a PAUSED draft as a state-only lifecycle transition", () => {
+  it("resumes a PAUSED draft and preserves the saved remaining time", () => {
     const pausedDraft = unwrap(
       pauseDraft(createLiveDraft(), {
         now: "2026-05-30T12:00:10.000Z"
       })
     );
-    const beforeTimer = pausedDraft.timer;
     const resumedDraft = unwrap(
       resumeDraft(pausedDraft, {
         now: "2026-05-30T12:00:20.000Z",
@@ -232,7 +241,13 @@ describe("draft lifecycle transitions", () => {
     );
 
     expect(resumedDraft.status).toBe("LIVE");
-    expect(resumedDraft.timer).toEqual(beforeTimer);
+    expect(resumedDraft.timer).toEqual({
+      isRunning: true,
+      phaseStartedAt: "2026-05-30T12:00:20.000Z",
+      pausedAt: undefined,
+      remainingSeconds: 20,
+      originalSeconds: 30
+    });
     expect(resumedDraft.history.at(-1)?.action).toBe("DRAFT_RESUMED");
   });
 
