@@ -1,0 +1,16 @@
+{
+  "name": "@mmbt/game-lol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "LoL sample adapter workspace placeholder.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "echo TQ-010 skeleton only - LoL sample adapter is not implemented yet.",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo No LoL adapter tests configured yet for the TQ-010 skeleton.",
+    "lint": "echo No LoL adapter lint configured yet for the TQ-010 skeleton."
+  }
+}

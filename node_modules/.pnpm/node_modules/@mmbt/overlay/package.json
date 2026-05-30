@@ -1,0 +1,16 @@
+{
+  "name": "@mmbt/overlay",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Overlay workspace placeholder for the Multi-MOBA Esports Broadcast Toolkit.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "echo TQ-010 skeleton only - overlay routes are not implemented yet.",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo No overlay tests configured yet for the TQ-010 skeleton.",
+    "lint": "echo No overlay lint configured yet for the TQ-010 skeleton."
+  }
+}

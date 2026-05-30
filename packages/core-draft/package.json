@@ -1,0 +1,16 @@
+{
+  "name": "@mmbt/core-draft",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Universal draft workspace placeholder for the Multi-MOBA Esports Broadcast Toolkit.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "echo TQ-010 skeleton only - universal draft logic is not implemented yet.",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo No core draft tests configured yet for the TQ-010 skeleton.",
+    "lint": "echo No core draft lint configured yet for the TQ-010 skeleton."
+  }
+}
