@@ -2,15 +2,18 @@
   "name": "@mmbt/core-draft",
   "version": "0.0.0",
   "private": true,
-  "description": "Universal draft workspace placeholder for the Multi-MOBA Esports Broadcast Toolkit.",
+  "description": "Game-agnostic universal draft lifecycle engine for the Multi-MOBA Esports Broadcast Toolkit.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "echo TQ-010 skeleton only - universal draft logic is not implemented yet.",
+    "dev": "echo Core draft package contains pure universal draft lifecycle logic.",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src --max-warnings=0"
+  },
+  "dependencies": {
+    "@mmbt/shared-types": "workspace:*"
   }
 }

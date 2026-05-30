@@ -38,7 +38,11 @@ importers:
 
   games/lol: {}
 
-  packages/core-draft: {}
+  packages/core-draft:
+    dependencies:
+      '@mmbt/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
 
   packages/core-match:
     dependencies:
