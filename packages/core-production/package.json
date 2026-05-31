@@ -2,15 +2,18 @@
   "name": "@mmbt/core-production",
   "version": "0.0.0",
   "private": true,
-  "description": "Core production workspace placeholder for the Multi-MOBA Esports Broadcast Toolkit.",
+  "description": "Pure production state machine helpers for the Multi-MOBA Esports Broadcast Toolkit.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "echo TQ-010 skeleton only - production control logic is not implemented yet.",
+    "dev": "echo Core production package contains pure production state logic.",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src --max-warnings=0"
+  },
+  "dependencies": {
+    "@mmbt/shared-types": "workspace:*"
   }
 }

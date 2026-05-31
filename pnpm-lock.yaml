@@ -52,11 +52,19 @@ importers:
 
   packages/core-overlay: {}
 
-  packages/core-production: {}
+  packages/core-production:
+    dependencies:
+      '@mmbt/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
 
   packages/shared-types: {}
 
-  packages/theme-engine: {}
+  packages/theme-engine:
+    dependencies:
+      '@mmbt/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
 
 packages:
 
