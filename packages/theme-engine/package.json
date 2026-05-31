@@ -2,15 +2,18 @@
   "name": "@mmbt/theme-engine",
   "version": "0.0.0",
   "private": true,
-  "description": "Theme engine workspace placeholder for the Multi-MOBA Esports Broadcast Toolkit.",
+  "description": "Pure theme defaults, validation, and local asset helpers for the Multi-MOBA Esports Broadcast Toolkit.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "echo TQ-010 skeleton only - theme engine logic is not implemented yet.",
+    "dev": "echo Theme engine package contains pure theme config helpers.",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src --max-warnings=0"
+  },
+  "dependencies": {
+    "@mmbt/shared-types": "workspace:*"
   }
 }
