@@ -1,6 +1,4 @@
-export const lolWorkspace = {
-  name: "@mmbt/game-lol",
-  status: "skeleton",
-  adapterImplemented: false,
-  futurePluginOnly: true
-} as const;
+export * from "./adapter";
+export * from "./data";
+export * from "./rulesets";
+export * from "./validation";

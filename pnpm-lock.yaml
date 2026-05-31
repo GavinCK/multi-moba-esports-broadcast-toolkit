@@ -43,7 +43,18 @@ importers:
 
   games/hok: {}
 
-  games/lol: {}
+  games/lol:
+    dependencies:
+      '@mmbt/core-draft':
+        specifier: workspace:*
+        version: link:../../packages/core-draft
+      '@mmbt/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
+    devDependencies:
+      '@mmbt/game-adapters':
+        specifier: workspace:*
+        version: link:../../packages/game-adapters
 
   packages/core-draft:
     dependencies:
