@@ -15,7 +15,7 @@ import {
   HOK_SAMPLE_DISPLAY_NAME,
   HOK_SAMPLE_GAME_CODE,
   HOK_SAMPLE_HEROES
-} from "./data";
+} from "./data.js";
 
 const HOK_SAMPLE_SUPPORTED_PHASE_TYPES = ["BAN", "PICK"] as const;
 

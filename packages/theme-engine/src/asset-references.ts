@@ -3,7 +3,7 @@ import type {
   ThemeAssetResolutionOptions,
   ThemeEngineResult,
   ThemeValidationIssue
-} from "./types";
+} from "./types.js";
 
 const ASSET_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 const ASSET_PATH_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/;
@@ -120,4 +120,3 @@ export function resolveThemeAssetPath(
 export function isLocalThemeAssetReference(assetReference: string): boolean {
   return resolveThemeAssetPath(assetReference).ok;
 }
-

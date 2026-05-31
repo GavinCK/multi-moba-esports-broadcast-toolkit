@@ -1,6 +1,6 @@
 import type { DraftPhaseDefinition, DraftStatus, DraftTimerState } from "@mmbt/shared-types";
 
-import { fail, ok, type DraftEngineResult } from "./errors";
+import { fail, ok, type DraftEngineResult } from "./errors.js";
 
 export interface CalculateTimerStateInput {
   timer: DraftTimerState;

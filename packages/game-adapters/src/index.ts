@@ -1,3 +1,3 @@
-export * from "./registry";
-export type * from "./types";
-export * from "./validation";
+export * from "./registry.js";
+export type * from "./types.js";
+export * from "./validation.js";

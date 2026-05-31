@@ -13,9 +13,9 @@ import {
   GENERIC_MOBA_DISPLAY_NAME,
   GENERIC_MOBA_GAME_CODE,
   GENERIC_MOBA_HEROES
-} from "./data";
-import { getGenericMobaDefaultRulesets } from "./rulesets";
-import { validateGenericMobaDraftAction } from "./validation";
+} from "./data.js";
+import { getGenericMobaDefaultRulesets } from "./rulesets.js";
+import { validateGenericMobaDraftAction } from "./validation.js";
 
 export const GENERIC_MOBA_SUPPORTED_DRAFT_MODES = ["manual-standard-5v5"] as const;
 

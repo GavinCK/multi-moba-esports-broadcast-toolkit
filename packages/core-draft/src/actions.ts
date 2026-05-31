@@ -13,9 +13,9 @@ import type {
   TeamSide
 } from "@mmbt/shared-types";
 
-import { COMPLETE_ACTION_STATUSES, TEAM_SIDES } from "./constants";
-import { fail, ok, type DraftEngineError, type DraftEngineResult } from "./errors";
-import { calculateTimerState, createTimerForPhase } from "./timer";
+import { COMPLETE_ACTION_STATUSES, TEAM_SIDES } from "./constants.js";
+import { fail, ok, type DraftEngineError, type DraftEngineResult } from "./errors.js";
+import { calculateTimerState, createTimerForPhase } from "./timer.js";
 
 export interface DraftActionOperationOptions {
   actionId?: string;

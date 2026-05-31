@@ -7,7 +7,7 @@ import type {
 import type {
   ProductionRuntimeState,
   ProductionStatusCategory
-} from "./types";
+} from "./types.js";
 
 export function getCurrentProductionStatus(
   state: ProductionRuntimeState

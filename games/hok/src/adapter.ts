@@ -13,9 +13,9 @@ import {
   HOK_SAMPLE_GAME_CODE,
   HOK_SAMPLE_HEROES,
   cloneHokSampleHero
-} from "./data";
-import { getHokSampleDefaultRulesets } from "./rulesets";
-import { validateHokSampleDraftAction } from "./validation";
+} from "./data.js";
+import { getHokSampleDefaultRulesets } from "./rulesets.js";
+import { validateHokSampleDraftAction } from "./validation.js";
 
 export const HOK_SAMPLE_SUPPORTED_DRAFT_MODES = ["manual-static-global-bp-5v5"] as const;
 

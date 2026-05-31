@@ -1,12 +1,12 @@
 import type { ThemeAssetConfig } from "@mmbt/shared-types";
 
-import { DEFAULT_THEME_CONFIG } from "./constants";
+import { DEFAULT_THEME_CONFIG } from "./constants.js";
 import type {
   ResolvedThemeConfig,
   ThemeAssetOverride,
   ThemeConfigOverride,
   ThemeSpacingConfig
-} from "./types";
+} from "./types.js";
 
 function cloneSponsorSlots(
   sponsorSlots: ThemeAssetConfig["sponsorSlots"] | ThemeAssetOverride["sponsorSlots"]
@@ -80,4 +80,3 @@ export function normalizeThemeConfig(
 ): ResolvedThemeConfig {
   return mergeThemeWithDefaults(themeConfig);
 }
-

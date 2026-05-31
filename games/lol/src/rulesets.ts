@@ -1,6 +1,6 @@
 import type { DraftRuleset } from "@mmbt/shared-types";
 
-import { LOL_SAMPLE_DATA_SOURCE, LOL_SAMPLE_GAME_CODE } from "./data";
+import { LOL_SAMPLE_DATA_SOURCE, LOL_SAMPLE_GAME_CODE } from "./data.js";
 
 export const LOL_SAMPLE_STANDARD_RULESET_ID = "lol-sample-standard-5v5" as const;
 

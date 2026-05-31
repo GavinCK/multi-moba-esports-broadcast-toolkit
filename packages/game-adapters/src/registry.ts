@@ -1,7 +1,7 @@
 import type { GameAdapter, GameCode, GameInstance, Match } from "@mmbt/shared-types";
 
-import { fail, ok, type GameAdapterRegistry, type GameAdapterRegistryResult } from "./types";
-import { validateGameAdapter } from "./validation";
+import { fail, ok, type GameAdapterRegistry, type GameAdapterRegistryResult } from "./types.js";
+import { validateGameAdapter } from "./validation.js";
 
 function toSerializableValidationIssues(validation: ReturnType<typeof validateGameAdapter>) {
   return (validation.issues ?? []).map((issue) => ({

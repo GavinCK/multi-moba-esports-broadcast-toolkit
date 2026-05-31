@@ -7,10 +7,23 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "echo TQ-010 skeleton only - server runtime is not implemented yet.",
+    "dev": "pnpm build && node dist/index.js",
+    "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src --max-warnings=0"
+  },
+  "dependencies": {
+    "@mmbt/core-draft": "workspace:*",
+    "@mmbt/core-match": "workspace:*",
+    "@mmbt/core-production": "workspace:*",
+    "@mmbt/game-adapters": "workspace:*",
+    "@mmbt/game-aov-sample": "workspace:*",
+    "@mmbt/game-generic-moba": "workspace:*",
+    "@mmbt/game-hok-sample": "workspace:*",
+    "@mmbt/game-lol-sample": "workspace:*",
+    "@mmbt/shared-types": "workspace:*",
+    "@mmbt/theme-engine": "workspace:*"
   }
 }

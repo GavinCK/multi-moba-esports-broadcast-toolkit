@@ -13,9 +13,9 @@ import {
   LOL_SAMPLE_CHAMPIONS,
   LOL_SAMPLE_DISPLAY_NAME,
   LOL_SAMPLE_GAME_CODE
-} from "./data";
-import { getLoLSampleDefaultRulesets } from "./rulesets";
-import { validateLoLSampleDraftAction } from "./validation";
+} from "./data.js";
+import { getLoLSampleDefaultRulesets } from "./rulesets.js";
+import { validateLoLSampleDraftAction } from "./validation.js";
 
 export const LOL_SAMPLE_SUPPORTED_DRAFT_MODES = ["manual-static-standard-5v5"] as const;
 

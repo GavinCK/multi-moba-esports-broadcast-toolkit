@@ -9,7 +9,7 @@ import type {
   JsonValue
 } from "@mmbt/shared-types";
 
-import { GENERIC_MOBA_GAME_CODE, GENERIC_MOBA_HEROES } from "./data";
+import { GENERIC_MOBA_GAME_CODE, GENERIC_MOBA_HEROES } from "./data.js";
 
 const GENERIC_MOBA_SUPPORTED_PHASE_TYPES = ["BAN", "PICK"] as const;
 

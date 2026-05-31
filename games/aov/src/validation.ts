@@ -15,7 +15,7 @@ import {
   AOV_SAMPLE_DISPLAY_NAME,
   AOV_SAMPLE_GAME_CODE,
   AOV_SAMPLE_HEROES
-} from "./data";
+} from "./data.js";
 
 const AOV_SAMPLE_SUPPORTED_PHASE_TYPES = ["BAN", "PICK"] as const;
 

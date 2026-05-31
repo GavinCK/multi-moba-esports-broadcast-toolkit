@@ -13,9 +13,9 @@ import {
   AOV_SAMPLE_GAME_CODE,
   AOV_SAMPLE_HEROES,
   cloneAovSampleHero
-} from "./data";
-import { getAovSampleDefaultRulesets } from "./rulesets";
-import { validateAovSampleDraftAction } from "./validation";
+} from "./data.js";
+import { getAovSampleDefaultRulesets } from "./rulesets.js";
+import { validateAovSampleDraftAction } from "./validation.js";
 
 export const AOV_SAMPLE_SUPPORTED_DRAFT_MODES = ["manual-static-standard-5v5"] as const;
 

@@ -1,6 +1,6 @@
 import type { DraftRuleset } from "@mmbt/shared-types";
 
-import { GENERIC_MOBA_GAME_CODE } from "./data";
+import { GENERIC_MOBA_GAME_CODE } from "./data.js";
 
 export const GENERIC_MOBA_STANDARD_RULESET_ID = "generic-moba-standard-5v5" as const;
 

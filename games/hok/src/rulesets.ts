@@ -1,6 +1,6 @@
 import type { DraftRuleset } from "@mmbt/shared-types";
 
-import { HOK_SAMPLE_DATA_SOURCE, HOK_SAMPLE_GAME_CODE } from "./data";
+import { HOK_SAMPLE_DATA_SOURCE, HOK_SAMPLE_GAME_CODE } from "./data.js";
 
 export const HOK_SAMPLE_GLOBAL_BP_RULESET_ID = "hok-sample-global-bp-5v5" as const;
 

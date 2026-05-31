@@ -11,14 +11,14 @@ import type {
   Team
 } from "@mmbt/shared-types";
 
-import { GAME_STATUSES, MATCH_STATUSES, SPONSOR_SLOTS } from "./constants";
+import { GAME_STATUSES, MATCH_STATUSES, SPONSOR_SLOTS } from "./constants.js";
 import {
   getMatchFormatGameCount,
   getMatchFormatWinsRequired,
   getMatchGames,
   isMatchFormat
-} from "./helpers";
-import type { MatchBundle, ValidationIssue, ValidationResult } from "./types";
+} from "./helpers.js";
+import type { MatchBundle, ValidationIssue, ValidationResult } from "./types.js";
 
 type IdLookup = ReadonlySet<string> | readonly string[];
 

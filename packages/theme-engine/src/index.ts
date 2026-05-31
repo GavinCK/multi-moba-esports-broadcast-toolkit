@@ -1,5 +1,5 @@
-export * from "./asset-references";
-export * from "./constants";
-export * from "./merge";
-export type * from "./types";
-export * from "./validation";
+export * from "./asset-references.js";
+export * from "./constants.js";
+export * from "./merge.js";
+export type * from "./types.js";
+export * from "./validation.js";

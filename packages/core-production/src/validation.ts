@@ -5,8 +5,8 @@ import {
   GRAPHIC_TYPES,
   LIVE_PRODUCTION_STATUSES,
   PRODUCTION_STATUSES
-} from "./constants";
-import type { ProductionTransitionValidation } from "./types";
+} from "./constants.js";
+import type { ProductionTransitionValidation } from "./types.js";
 
 export function isProductionStatus(value: unknown): value is ProductionState {
   return (

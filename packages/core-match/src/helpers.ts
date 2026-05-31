@@ -1,7 +1,7 @@
 import type { GameInstance, Match, MatchFormat, Team } from "@mmbt/shared-types";
 
-import { MATCH_FORMATS } from "./constants";
-import type { MatchTeams } from "./types";
+import { MATCH_FORMATS } from "./constants.js";
+import type { MatchTeams } from "./types.js";
 
 export function isMatchFormat(value: unknown): value is MatchFormat {
   return typeof value === "string" && MATCH_FORMATS.includes(value as MatchFormat);

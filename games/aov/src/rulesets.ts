@@ -1,6 +1,6 @@
 import type { DraftRuleset } from "@mmbt/shared-types";
 
-import { AOV_SAMPLE_DATA_SOURCE, AOV_SAMPLE_GAME_CODE } from "./data";
+import { AOV_SAMPLE_DATA_SOURCE, AOV_SAMPLE_GAME_CODE } from "./data.js";
 
 export const AOV_SAMPLE_STANDARD_RULESET_ID = "aov-sample-standard-5v5" as const;
 

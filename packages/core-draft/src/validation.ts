@@ -6,7 +6,7 @@ import type {
   JsonObject
 } from "@mmbt/shared-types";
 
-import { DRAFT_ACTION_TYPES, DRAFT_PHASE_TEAMS, SUPPORTED_PHASE_TYPES, TEAM_SIDES } from "./constants";
+import { DRAFT_ACTION_TYPES, DRAFT_PHASE_TEAMS, SUPPORTED_PHASE_TYPES, TEAM_SIDES } from "./constants.js";
 
 function addIssue(
   issues: DraftValidationIssue[],

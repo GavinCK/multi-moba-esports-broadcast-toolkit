@@ -10,10 +10,10 @@ import type {
   JsonValue
 } from "@mmbt/shared-types";
 
-import { COMPLETE_ACTION_STATUSES } from "./constants";
-import { fail, ok, type DraftEngineResult } from "./errors";
-import { createTimerForPhase, pauseTimer, resumeTimer } from "./timer";
-import { validateDraftRuleset } from "./validation";
+import { COMPLETE_ACTION_STATUSES } from "./constants.js";
+import { fail, ok, type DraftEngineResult } from "./errors.js";
+import { createTimerForPhase, pauseTimer, resumeTimer } from "./timer.js";
+import { validateDraftRuleset } from "./validation.js";
 
 export interface CreateDraftStateInput {
   id?: string;

@@ -9,9 +9,9 @@ import {
   THEME_SPACING_KEYS,
   THEME_SPACING_LIMITS,
   THEME_TYPOGRAPHY_KEYS
-} from "./constants";
-import { resolveThemeAssetPath } from "./asset-references";
-import { mergeThemeWithDefaults } from "./merge";
+} from "./constants.js";
+import { resolveThemeAssetPath } from "./asset-references.js";
+import { mergeThemeWithDefaults } from "./merge.js";
 import type {
   ResolvedThemeConfig,
   ThemeConfigOverride,
@@ -19,7 +19,7 @@ import type {
   ThemeValidationIssue,
   ThemeValidationOptions,
   ThemeValidationResult
-} from "./types";
+} from "./types.js";
 
 const COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const UNSAFE_TEXT_PATTERN = /(?:<|>|{|}|;|@import|url\s*\(|javascript\s*:)/i;
@@ -375,4 +375,3 @@ export function loadThemeConfig(
     value: mergeThemeWithDefaults(themeConfig as ThemeConfigOverride)
   };
 }
-

@@ -4,18 +4,18 @@ import {
   DEFAULT_GRAPHIC_TAKE_STATE_ID,
   DEFAULT_GRAPHIC_TYPE,
   DEFAULT_PRODUCTION_STATE_ID
-} from "./constants";
-import { fail, ok, type ProductionEngineResult } from "./errors";
+} from "./constants.js";
+import { fail, ok, type ProductionEngineResult } from "./errors.js";
 import type {
   CreateInitialProductionStateInput,
   ProductionRuntimeState,
   SetProductionStateInput
-} from "./types";
+} from "./types.js";
 import {
   isLiveProductionStatus,
   isProductionStatus,
   validateProductionTransition
-} from "./validation";
+} from "./validation.js";
 
 function getNow(options?: { now?: string }): string {
   return options?.now ?? new Date().toISOString();

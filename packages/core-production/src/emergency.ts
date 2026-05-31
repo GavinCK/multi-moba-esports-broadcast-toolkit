@@ -1,10 +1,10 @@
-import { DEFAULT_EMERGENCY_MESSAGE } from "./constants";
-import { fail, ok, type ProductionEngineResult } from "./errors";
+import { DEFAULT_EMERGENCY_MESSAGE } from "./constants.js";
+import { fail, ok, type ProductionEngineResult } from "./errors.js";
 import type {
   EnterEmergencyModeInput,
   ExitEmergencyModeInput,
   ProductionRuntimeState
-} from "./types";
+} from "./types.js";
 
 function getNow(options?: { now?: string }): string {
   return options?.now ?? new Date().toISOString();

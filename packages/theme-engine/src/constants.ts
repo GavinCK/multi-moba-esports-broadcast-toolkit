@@ -1,4 +1,4 @@
-import type { ResolvedThemeConfig, ThemeSpacingConfig } from "./types";
+import type { ResolvedThemeConfig, ThemeSpacingConfig } from "./types.js";
 
 export const THEME_COLOR_KEYS = [
   "background",
@@ -88,4 +88,3 @@ export const THEME_SPACING_LIMITS = {
   min: 0,
   max: 200
 } as const;
-

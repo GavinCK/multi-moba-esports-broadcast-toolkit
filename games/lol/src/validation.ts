@@ -15,7 +15,7 @@ import {
   LOL_SAMPLE_DATA_SOURCE,
   LOL_SAMPLE_DISPLAY_NAME,
   LOL_SAMPLE_GAME_CODE
-} from "./data";
+} from "./data.js";
 
 const LOL_SAMPLE_SUPPORTED_PHASE_TYPES = ["BAN", "PICK"] as const;
 

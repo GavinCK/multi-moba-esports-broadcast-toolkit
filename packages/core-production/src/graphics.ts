@@ -1,11 +1,11 @@
-import { fail, ok, type ProductionEngineResult } from "./errors";
-import { isJsonValue } from "./json";
+import { fail, ok, type ProductionEngineResult } from "./errors.js";
+import { isJsonValue } from "./json.js";
 import type {
   ConfirmedProductionOperationOptions,
   PreviewGraphicInput,
   ProductionRuntimeState
-} from "./types";
-import { isGraphicType } from "./validation";
+} from "./types.js";
+import { isGraphicType } from "./validation.js";
 
 function getNow(options?: { now?: string }): string {
   return options?.now ?? new Date().toISOString();
