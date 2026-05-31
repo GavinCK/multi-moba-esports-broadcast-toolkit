@@ -30,7 +30,18 @@ importers:
 
   apps/server: {}
 
-  games/aov: {}
+  games/aov:
+    dependencies:
+      '@mmbt/core-draft':
+        specifier: workspace:*
+        version: link:../../packages/core-draft
+      '@mmbt/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
+    devDependencies:
+      '@mmbt/game-adapters':
+        specifier: workspace:*
+        version: link:../../packages/game-adapters
 
   games/generic-moba:
     dependencies:
@@ -41,7 +52,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared-types
 
-  games/hok: {}
+  games/hok:
+    dependencies:
+      '@mmbt/core-draft':
+        specifier: workspace:*
+        version: link:../../packages/core-draft
+      '@mmbt/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
+    devDependencies:
+      '@mmbt/game-adapters':
+        specifier: workspace:*
+        version: link:../../packages/game-adapters
 
   games/lol:
     dependencies:

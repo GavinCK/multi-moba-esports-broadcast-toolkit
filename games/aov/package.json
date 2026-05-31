@@ -1,16 +1,23 @@
 {
-  "name": "@mmbt/game-aov",
+  "name": "@mmbt/game-aov-sample",
   "version": "0.0.0",
   "private": true,
-  "description": "AOV game adapter workspace placeholder.",
+  "description": "Static manual AOV sample adapter for local draft testing.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "echo TQ-010 skeleton only - AOV adapter is not implemented yet.",
+    "dev": "echo AOV sample adapter contains pure local data and helpers.",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src --max-warnings=0"
+  },
+  "dependencies": {
+    "@mmbt/core-draft": "workspace:*",
+    "@mmbt/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@mmbt/game-adapters": "workspace:*"
   }
 }

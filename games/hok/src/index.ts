@@ -1,5 +1,4 @@
-export const hokWorkspace = {
-  name: "@mmbt/game-hok",
-  status: "skeleton",
-  adapterImplemented: false
-} as const;
+export * from "./adapter";
+export * from "./data";
+export * from "./rulesets";
+export * from "./validation";

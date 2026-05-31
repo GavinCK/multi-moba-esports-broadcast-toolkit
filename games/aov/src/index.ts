@@ -1,5 +1,4 @@
-export const aovWorkspace = {
-  name: "@mmbt/game-aov",
-  status: "skeleton",
-  adapterImplemented: false
-} as const;
+export * from "./adapter";
+export * from "./data";
+export * from "./rulesets";
+export * from "./validation";
