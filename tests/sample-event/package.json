@@ -1,0 +1,14 @@
+{
+  "name": "@mmbt/sample-event-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Static sample event package consistency tests.",
+  "type": "module",
+  "scripts": {
+    "dev": "echo Sample event package tests only.",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src --max-warnings=0"
+  }
+}

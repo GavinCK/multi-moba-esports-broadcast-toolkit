@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Red Titans logo">
+  <rect width="512" height="512" rx="72" fill="#5b1116"/>
+  <path d="M256 72l140 84v140c0 76-58 124-140 164-82-40-140-88-140-164V156z" fill="#dc2626"/>
+  <path d="M188 170h136l-28 64h62l-162 134 38-98h-72z" fill="#fca5a5"/>
+  <path d="M196 160h120l-24 54h54l-126 104 30-78h-64z" fill="#f8fafc" opacity=".84"/>
+</svg>

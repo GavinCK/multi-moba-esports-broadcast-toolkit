@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Blue Meteors logo">
+  <rect width="512" height="512" rx="72" fill="#102a5c"/>
+  <circle cx="184" cy="196" r="76" fill="#93c5fd"/>
+  <path d="M138 300c118-78 202-126 252-144-38 52-101 119-188 201-26-6-47-25-64-57z" fill="#2563eb"/>
+  <path d="M238 120h144l-68 44h-114z" fill="#f8fafc" opacity=".9"/>
+</svg>

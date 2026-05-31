@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Fallback player photo">
+  <rect width="512" height="512" rx="72" fill="#111827"/>
+  <circle cx="256" cy="184" r="82" fill="#64748b"/>
+  <path d="M116 430c22-96 82-146 140-146s118 50 140 146z" fill="#94a3b8"/>
+</svg>

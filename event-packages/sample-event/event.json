@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "event-package.v0.1",
+  "packageId": "sample-event",
+  "event": {
+    "id": "event_sample-2026",
+    "name": "Sample Multi-MOBA Invitational 2026",
+    "shortName": "Sample Invitational",
+    "organizer": "Broadcast Toolkit Demo",
+    "venue": "Local Production LAN",
+    "startDate": "2026-07-01",
+    "endDate": "2026-07-01",
+    "timezone": "Asia/Hong_Kong",
+    "defaultLanguage": "en",
+    "gameCodes": ["generic-moba", "lol", "aov", "hok"],
+    "metadata": {
+      "sampleOnly": true,
+      "localFirst": true,
+      "manualFirst": true
+    }
+  },
+  "defaults": {
+    "matchId": "match_grand-final",
+    "gameCode": "generic-moba",
+    "themeId": "default-theme",
+    "rulesetByGameCode": {
+      "generic-moba": "generic-moba-standard-5v5",
+      "lol": "lol-sample-standard-5v5",
+      "aov": "aov-sample-standard-5v5",
+      "hok": "hok-sample-global-bp-5v5"
+    },
+    "productionLogPath": "logs/production-log.jsonl"
+  }
+}

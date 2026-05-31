@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "event-package.v0.1",
+  "teams": [
+    {
+      "id": "team_blue-meteors",
+      "name": "Blue Meteors",
+      "shortName": "BLU",
+      "logoUrl": "assets/team-logos/blue-meteors.svg",
+      "countryCode": "HK",
+      "primaryColor": "#2563EB",
+      "secondaryColor": "#93C5FD",
+      "metadata": {
+        "sampleOnly": true
+      }
+    },
+    {
+      "id": "team_red-titans",
+      "name": "Red Titans",
+      "shortName": "RED",
+      "logoUrl": "assets/team-logos/red-titans.svg",
+      "countryCode": "HK",
+      "primaryColor": "#DC2626",
+      "secondaryColor": "#FCA5A5",
+      "metadata": {
+        "sampleOnly": true
+      }
+    }
+  ]
+}

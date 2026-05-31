@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "event-package.v0.1",
+  "players": [
+    {
+      "id": "player_blue-top",
+      "teamId": "team_blue-meteors",
+      "displayName": "BlueAtlas",
+      "role": "Top",
+      "nationality": "HK"
+    },
+    {
+      "id": "player_blue-jungle",
+      "teamId": "team_blue-meteors",
+      "displayName": "BluePath",
+      "role": "Jungle",
+      "nationality": "HK"
+    },
+    {
+      "id": "player_blue-mid",
+      "teamId": "team_blue-meteors",
+      "displayName": "BluePulse",
+      "role": "Mid",
+      "nationality": "HK"
+    },
+    {
+      "id": "player_blue-bot",
+      "teamId": "team_blue-meteors",
+      "displayName": "BlueArrow",
+      "role": "Bot",
+      "nationality": "HK"
+    },
+    {
+      "id": "player_blue-support",
+      "teamId": "team_blue-meteors",
+      "displayName": "BlueAnchor",
+      "role": "Support",
+      "nationality": "HK"
+    },
+    {
+      "id": "player_red-top",
+      "teamId": "team_red-titans",
+      "displayName": "RedAegis",
+      "role": "Top",
+      "nationality": "HK"
+    },
+    {
+      "id": "player_red-jungle",
+      "teamId": "team_red-titans",
+      "displayName": "RedTrail",
+      "role": "Jungle",
+      "nationality": "HK"
+    },
+    {
+      "id": "player_red-mid",
+      "teamId": "team_red-titans",
+      "displayName": "RedSpark",
+      "role": "Mid",
+      "nationality": "HK"
+    },
+    {
+      "id": "player_red-bot",
+      "teamId": "team_red-titans",
+      "displayName": "RedBolt",
+      "role": "Bot",
+      "nationality": "HK"
+    },
+    {
+      "id": "player_red-support",
+      "teamId": "team_red-titans",
+      "displayName": "RedHarbor",
+      "role": "Support",
+      "nationality": "HK"
+    }
+  ]
+}

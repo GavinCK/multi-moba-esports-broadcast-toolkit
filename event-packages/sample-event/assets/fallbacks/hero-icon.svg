@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Fallback hero icon">
+  <rect width="256" height="256" rx="32" fill="#111827"/>
+  <path d="M128 34l76 42v86l-76 60-76-60V76z" fill="#334155"/>
+  <path d="M128 72l38 22v44l-38 30-38-30V94z" fill="#facc15"/>
+</svg>

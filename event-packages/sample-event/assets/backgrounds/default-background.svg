@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-label="Sample event background">
+  <rect width="1920" height="1080" fill="#101418"/>
+  <path d="M0 840h1920v240H0z" fill="#0b1220"/>
+  <path d="M0 0h760L420 1080H0z" fill="#1d4ed8" opacity=".28"/>
+  <path d="M1920 0h-760l340 1080h420z" fill="#dc2626" opacity=".24"/>
+  <path d="M180 180h1560v720H180z" fill="none" stroke="#facc15" stroke-width="8" opacity=".65"/>
+</svg>

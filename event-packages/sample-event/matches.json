@@ -1,0 +1,161 @@
+{
+  "schemaVersion": "event-package.v0.1",
+  "matches": [
+    {
+      "id": "match_grand-final",
+      "eventId": "event_sample-2026",
+      "gameCode": "generic-moba",
+      "title": "Grand Final",
+      "format": "BO3",
+      "teams": {
+        "blue": "team_blue-meteors",
+        "red": "team_red-titans"
+      },
+      "score": {
+        "blue": 0,
+        "red": 0
+      },
+      "currentGameNumber": 1,
+      "status": "READY",
+      "sponsorSlotIds": ["sponsor_presented-by"],
+      "themeId": "default-theme",
+      "games": [
+        {
+          "id": "game_generic-001",
+          "matchId": "match_grand-final",
+          "gameNumber": 1,
+          "gameCode": "generic-moba",
+          "blueTeamId": "team_blue-meteors",
+          "redTeamId": "team_red-titans",
+          "rulesetId": "generic-moba-standard-5v5",
+          "themeId": "default-theme",
+          "draftId": "draft_generic-001",
+          "status": "DRAFT_READY"
+        },
+        {
+          "id": "game_generic-002",
+          "matchId": "match_grand-final",
+          "gameNumber": 2,
+          "gameCode": "generic-moba",
+          "blueTeamId": "team_blue-meteors",
+          "redTeamId": "team_red-titans",
+          "rulesetId": "generic-moba-standard-5v5",
+          "themeId": "default-theme",
+          "draftId": "draft_generic-002",
+          "status": "NOT_STARTED"
+        },
+        {
+          "id": "game_generic-003",
+          "matchId": "match_grand-final",
+          "gameNumber": 3,
+          "gameCode": "generic-moba",
+          "blueTeamId": "team_blue-meteors",
+          "redTeamId": "team_red-titans",
+          "rulesetId": "generic-moba-standard-5v5",
+          "themeId": "default-theme",
+          "draftId": "draft_generic-003",
+          "status": "NOT_STARTED"
+        }
+      ]
+    },
+    {
+      "id": "match_lol-showmatch",
+      "eventId": "event_sample-2026",
+      "gameCode": "lol",
+      "title": "LoL Sample Showmatch",
+      "format": "BO1",
+      "teams": {
+        "blue": "team_blue-meteors",
+        "red": "team_red-titans"
+      },
+      "score": {
+        "blue": 0,
+        "red": 0
+      },
+      "currentGameNumber": 1,
+      "status": "READY",
+      "sponsorSlotIds": ["sponsor_presented-by"],
+      "themeId": "default-theme",
+      "games": [
+        {
+          "id": "game_lol-001",
+          "matchId": "match_lol-showmatch",
+          "gameNumber": 1,
+          "gameCode": "lol",
+          "blueTeamId": "team_blue-meteors",
+          "redTeamId": "team_red-titans",
+          "rulesetId": "lol-sample-standard-5v5",
+          "themeId": "default-theme",
+          "draftId": "draft_lol-001",
+          "status": "DRAFT_READY"
+        }
+      ]
+    },
+    {
+      "id": "match_aov-showcase",
+      "eventId": "event_sample-2026",
+      "gameCode": "aov",
+      "title": "AOV Sample Showcase",
+      "format": "BO1",
+      "teams": {
+        "blue": "team_blue-meteors",
+        "red": "team_red-titans"
+      },
+      "score": {
+        "blue": 0,
+        "red": 0
+      },
+      "currentGameNumber": 1,
+      "status": "READY",
+      "sponsorSlotIds": ["sponsor_presented-by"],
+      "themeId": "default-theme",
+      "games": [
+        {
+          "id": "game_aov-001",
+          "matchId": "match_aov-showcase",
+          "gameNumber": 1,
+          "gameCode": "aov",
+          "blueTeamId": "team_blue-meteors",
+          "redTeamId": "team_red-titans",
+          "rulesetId": "aov-sample-standard-5v5",
+          "themeId": "default-theme",
+          "draftId": "draft_aov-001",
+          "status": "DRAFT_READY"
+        }
+      ]
+    },
+    {
+      "id": "match_hok-showcase",
+      "eventId": "event_sample-2026",
+      "gameCode": "hok",
+      "title": "HoK Sample Showcase",
+      "format": "BO1",
+      "teams": {
+        "blue": "team_blue-meteors",
+        "red": "team_red-titans"
+      },
+      "score": {
+        "blue": 0,
+        "red": 0
+      },
+      "currentGameNumber": 1,
+      "status": "READY",
+      "sponsorSlotIds": ["sponsor_presented-by"],
+      "themeId": "default-theme",
+      "games": [
+        {
+          "id": "game_hok-001",
+          "matchId": "match_hok-showcase",
+          "gameNumber": 1,
+          "gameCode": "hok",
+          "blueTeamId": "team_blue-meteors",
+          "redTeamId": "team_red-titans",
+          "rulesetId": "hok-sample-global-bp-5v5",
+          "themeId": "default-theme",
+          "draftId": "draft_hok-001",
+          "status": "DRAFT_READY"
+        }
+      ]
+    }
+  ]
+}

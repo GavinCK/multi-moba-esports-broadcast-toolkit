@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="240" viewBox="0 0 640 240" role="img" aria-label="Local LAN Studios sponsor logo">
+  <rect width="640" height="240" rx="28" fill="#111827"/>
+  <rect x="36" y="42" width="132" height="156" rx="18" fill="#facc15"/>
+  <path d="M68 82h68v28H96v50H68z" fill="#111827"/>
+  <path d="M206 88h52v88h-24v-62h-28zM282 88h26l38 88h-26l-7-18h-38l-7 18h-25zm1 50h22l-11-28zM360 88h26l40 52V88h24v88h-24l-40-52v52h-26z" fill="#f8fafc"/>
+  <text x="206" y="204" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="30">LOCAL LAN STUDIOS</text>
+</svg>

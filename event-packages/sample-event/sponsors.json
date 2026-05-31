@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "event-package.v0.1",
+  "sponsors": [
+    {
+      "id": "sponsor_presented-by",
+      "name": "Local LAN Studios",
+      "logoUrl": "assets/sponsor-logos/local-lan-studios.svg",
+      "slots": ["PRESENTED_BY", "DRAFT", "SCORE_BUG"],
+      "metadata": {
+        "sampleOnly": true
+      }
+    }
+  ]
+}

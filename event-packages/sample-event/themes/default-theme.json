@@ -1,0 +1,35 @@
+{
+  "id": "default-theme",
+  "name": "Sample Event Default Theme",
+  "version": "0.1.0",
+  "colors": {
+    "background": "#101418",
+    "primary": "#2563EB",
+    "secondary": "#DC2626",
+    "accent": "#FACC15",
+    "blueTeam": "#2563EB",
+    "redTeam": "#DC2626",
+    "textPrimary": "#F8FAFC",
+    "textSecondary": "#CBD5E1"
+  },
+  "typography": {
+    "headingFont": "Inter",
+    "bodyFont": "Inter",
+    "numberFont": "Roboto Mono"
+  },
+  "layout": {
+    "safeMarginPx": 64,
+    "borderRadiusPx": 8,
+    "animationSpeedMs": 250
+  },
+  "assets": {
+    "background": "assets/backgrounds/default-background.svg",
+    "frame": "assets/frames/draft-frame.svg",
+    "sponsorFrame": "assets/frames/sponsor-frame.svg",
+    "sponsorSlots": {
+      "PRESENTED_BY": "assets/sponsor-logos/local-lan-studios.svg",
+      "DRAFT": "assets/sponsor-logos/local-lan-studios.svg",
+      "SCORE_BUG": "assets/sponsor-logos/local-lan-studios.svg"
+    }
+  }
+}
