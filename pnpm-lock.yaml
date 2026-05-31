@@ -32,7 +32,14 @@ importers:
 
   games/aov: {}
 
-  games/generic-moba: {}
+  games/generic-moba:
+    dependencies:
+      '@mmbt/core-draft':
+        specifier: workspace:*
+        version: link:../../packages/core-draft
+      '@mmbt/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
 
   games/hok: {}
 
@@ -53,6 +60,12 @@ importers:
   packages/core-overlay: {}
 
   packages/core-production:
+    dependencies:
+      '@mmbt/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+
+  packages/game-adapters:
     dependencies:
       '@mmbt/shared-types':
         specifier: workspace:*

@@ -1,20 +1,19 @@
 {
-  "name": "@mmbt/game-generic-moba",
+  "name": "@mmbt/game-adapters",
   "version": "0.0.0",
   "private": true,
-  "description": "Generic MOBA game adapter for manual draft workflows.",
+  "description": "Pure game adapter registry and validation helpers for the Multi-MOBA Esports Broadcast Toolkit.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "echo Generic MOBA adapter contains pure local data and helpers.",
+    "dev": "echo Game adapter registry package contains pure local registration helpers.",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src --max-warnings=0"
   },
   "dependencies": {
-    "@mmbt/core-draft": "workspace:*",
     "@mmbt/shared-types": "workspace:*"
   }
 }
