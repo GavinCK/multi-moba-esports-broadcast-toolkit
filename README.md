@@ -6,28 +6,26 @@ The architecture is intentionally game-agnostic at the core. Universal Ban/Pick 
 
 ## Current Status
 
-This is the TQ-011 baseline tooling setup. It keeps the TQ-010 monorepo skeleton intact and adds standard verification commands.
+This repository now contains the early v0.1 foundation for the local server runtime, sample event package loading, Socket.IO realtime sync, and the first read-only Admin Dashboard app shell.
 
-Implemented in this step:
+Implemented so far:
 
 - pnpm workspace layout.
-- Placeholder apps, packages, and game folders.
-- Root TypeScript config.
-- TypeScript build and typecheck scripts for every workspace package.
-- ESLint baseline for placeholder TypeScript sources.
-- Vitest baseline tests for placeholder workspace exports.
+- Shared TypeScript contracts and core match/draft/production packages.
+- Local sample event package with Generic MOBA, LoL sample, AOV sample, and HoK sample adapter data.
+- Node server with local event package loading, health/state/adapters/draft/production REST APIs, append-only JSONL audit logging for accepted mutations, and read-only Socket.IO state sync.
+- React + TypeScript + Vite Admin Dashboard shell with read-only REST and Socket.IO client state.
+- Root lint, typecheck, test, build, and verify scripts.
 - Root `verify` script that runs lint, typecheck, test, and build.
 
 Not implemented yet:
 
-- Server APIs or Socket.IO runtime.
-- Admin dashboard UI.
 - Overlay routes.
-- Shared production data types.
-- Universal draft logic.
-- Game adapter data.
-- Sample event JSON fixtures.
-- Audit logging.
+- Draft operator controls.
+- Producer controls.
+- Caster panel.
+- OBS/vMix integration.
+- Cloud sync, database persistence, login, official game-client sync, or player-side automation.
 
 ## Workspace Shape
 
@@ -64,7 +62,16 @@ pnpm lint
 pnpm verify
 ```
 
-For this baseline task, `dev` scripts still report placeholder status because server, dashboard, and overlay runtimes are not implemented yet. `lint`, `typecheck`, `test`, `build`, and `verify` are real verification commands for the current placeholder workspace.
+`lint`, `typecheck`, `test`, `build`, and `verify` are real verification commands for the current workspace. Some later role panels and overlay apps remain placeholders until their task queue items are implemented.
+
+For local admin dashboard development, start the server and dashboard in separate terminals:
+
+```bash
+pnpm --filter @mmbt/server dev
+pnpm --filter @mmbt/admin-dashboard dev
+```
+
+The Admin Dashboard runs as a Vite app at `http://127.0.0.1:5173/admin` by default and proxies `/api` plus `/socket.io` to the local server at `http://127.0.0.1:3000`. Set `MMBT_SERVER_URL` before starting the dashboard if the server is on another local port.
 
 ## v0.1 Guardrails
 

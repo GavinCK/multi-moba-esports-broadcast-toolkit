@@ -2,15 +2,27 @@
   "name": "@mmbt/admin-dashboard",
   "version": "0.0.0",
   "private": true,
-  "description": "Admin dashboard workspace placeholder for the Multi-MOBA Esports Broadcast Toolkit.",
+  "description": "Read-only admin dashboard shell for the Multi-MOBA Esports Broadcast Toolkit.",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "echo TQ-010 skeleton only - admin dashboard UI is not implemented yet.",
-    "build": "tsc -p tsconfig.json",
+    "dev": "vite --host 127.0.0.1",
+    "preview": "vite preview --host 127.0.0.1",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "lint": "eslint src --max-warnings=0"
+  },
+  "dependencies": {
+    "@mmbt/shared-types": "workspace:*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.16",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "jsdom": "^29.1.1",
+    "vite": "^8.0.16"
   }
 }
