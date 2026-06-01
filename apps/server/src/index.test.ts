@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -16,11 +16,27 @@ import {
 
 const repositoryRoot = getRepositoryRoot();
 const sampleEventPath = join(repositoryRoot, "event-packages", "sample-event");
+const genericDraftId = "draft_generic-001";
+const genericMatchId = "match_grand-final";
+const genericFirstActionId = "ban-1-blue:slot-0";
+const genericSecondActionId = "ban-1-red:slot-0";
+const genericHeroId = "generic-vanguard";
+
+interface LocalServerContext {
+  baseUrl: string;
+}
 
 async function fetchJson(
   pathname: string,
-  options: { eventPackagePath?: string } = {}
+  options: { eventPackagePath?: string; method?: string; body?: unknown } = {}
 ): Promise<{ status: number; body: unknown }> {
+  return withServer(options, (context) => requestJson(context.baseUrl, pathname, options));
+}
+
+async function withServer<TValue>(
+  options: { eventPackagePath?: string },
+  callback: (context: LocalServerContext) => Promise<TValue>
+): Promise<TValue> {
   const { server } = await createServerApp({
     eventPackagePath: options.eventPackagePath ?? sampleEventPath,
     repositoryRoot,
@@ -38,12 +54,9 @@ async function fetchJson(
   }
 
   try {
-    const response = await fetch(`http://127.0.0.1:${(address as AddressInfo).port}${pathname}`);
-
-    return {
-      status: response.status,
-      body: await response.json()
-    };
+    return await callback({
+      baseUrl: `http://127.0.0.1:${(address as AddressInfo).port}`
+    });
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {
@@ -56,6 +69,45 @@ async function fetchJson(
       });
     });
   }
+}
+
+async function requestJson(
+  baseUrl: string,
+  pathname: string,
+  options: { method?: string; body?: unknown } = {}
+): Promise<{ status: number; body: unknown }> {
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method: options.method ?? "GET",
+    headers: options.body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: options.body === undefined ? undefined : JSON.stringify(options.body)
+  });
+
+  return {
+    status: response.status,
+    body: await response.json()
+  };
+}
+
+function createTempEventPackage(prefix = "mmbt-draft-api-"): string {
+  const tempPackagePath = mkdtempSync(join(tmpdir(), prefix));
+
+  cpSync(sampleEventPath, tempPackagePath, { recursive: true });
+  rmSync(join(tempPackagePath, "logs", "production-log.jsonl"), { force: true });
+
+  return tempPackagePath;
+}
+
+function readAuditLogEntries(packagePath: string): unknown[] {
+  const logPath = join(packagePath, "logs", "production-log.jsonl");
+
+  if (!existsSync(logPath)) {
+    return [];
+  }
+
+  return readFileSync(logPath, "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as unknown);
 }
 
 function expectApiEnvelope(body: unknown, ok: boolean): void {
@@ -155,6 +207,10 @@ describe("server runtime foundation", () => {
           hok: {
             loaded: true
           }
+        },
+        auditLogStatus: {
+          writable: true,
+          path: "event-packages/sample-event/logs/production-log.jsonl"
         }
       }
     });
@@ -180,9 +236,21 @@ describe("server runtime foundation", () => {
       ok: true,
       data: {
         eventPackageId: "sample-event",
-        currentMatchId: "match_grand-final",
+        currentMatchId: genericMatchId,
         currentGameId: "game_generic-001",
-        drafts: {},
+        drafts: {
+          [genericDraftId]: {
+            id: genericDraftId,
+            matchId: genericMatchId,
+            status: "READY",
+            actionCounts: {
+              total: 16,
+              pending: 16,
+              hover: 0,
+              locked: 0
+            }
+          }
+        },
         production: {
           status: "PRE_SHOW",
           overlaySafety: {
@@ -364,6 +432,589 @@ describe("server runtime foundation", () => {
     expect(stateText).not.toMatch(/file:\/\//i);
   });
 
+  it("returns known draft summaries and safe draft snapshots", async () => {
+    const drafts = await fetchJson("/api/drafts");
+    const filteredDrafts = await fetchJson(`/api/drafts?matchId=${genericMatchId}`);
+    const draftById = await fetchJson(`/api/drafts/${genericDraftId}`);
+    const draftByMatch = await fetchJson(`/api/drafts/${genericMatchId}`);
+    const state = await fetchJson("/api/state");
+
+    expect(drafts.status).toBe(200);
+    expectApiEnvelope(drafts.body, true);
+    expect(drafts.body).toMatchObject({
+      ok: true,
+      data: {
+        revision: 1,
+        drafts: expect.arrayContaining([
+          expect.objectContaining({
+            id: genericDraftId,
+            matchId: genericMatchId,
+            status: "READY",
+            currentPhase: expect.objectContaining({
+              id: "ban-1-blue"
+            }),
+            currentActionIds: [genericFirstActionId]
+          })
+        ])
+      }
+    });
+
+    expect(filteredDrafts.body).toMatchObject({
+      ok: true,
+      data: {
+        drafts: expect.arrayContaining([
+          expect.objectContaining({
+            id: genericDraftId,
+            matchId: genericMatchId
+          })
+        ])
+      }
+    });
+
+    expect(draftById.status).toBe(200);
+    expectApiEnvelope(draftById.body, true);
+    expect(draftById.body).toMatchObject({
+      ok: true,
+      data: {
+        revision: 1,
+        draft: {
+          summary: {
+            id: genericDraftId,
+            matchId: genericMatchId
+          },
+          draft: {
+            id: genericDraftId,
+            status: "READY",
+            actions: expect.arrayContaining([
+              expect.objectContaining({
+                id: genericFirstActionId,
+                status: "PENDING"
+              })
+            ])
+          }
+        }
+      }
+    });
+
+    expect(draftByMatch.body).toMatchObject({
+      ok: true,
+      data: {
+        draft: {
+          summary: {
+            id: genericDraftId,
+            matchId: genericMatchId
+          }
+        }
+      }
+    });
+
+    expect(state.body).toMatchObject({
+      ok: true,
+      data: {
+        drafts: {
+          [genericDraftId]: expect.objectContaining({
+            id: genericDraftId,
+            status: "READY"
+          })
+        }
+      }
+    });
+
+    const responseText = JSON.stringify([drafts.body, draftById.body, state.body]);
+    expect(responseText).not.toMatch(/loadHeroes|loadDefaultRulesets|getHeroById|validateDraftAction|getAssetUrl/);
+    expect(responseText).not.toMatch(/hiddenCompetitiveInformation|hiddenOpponentData|apiKey|secret/i);
+    expect(responseText).not.toMatch(/https?:\/\//i);
+  });
+
+  it("applies manual draft hover and lock mutations through core helpers and appends audit JSONL", async () => {
+    const tempPackagePath = createTempEventPackage();
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const stateBefore = await requestJson(baseUrl, "/api/state");
+        const readBefore = await requestJson(baseUrl, `/api/drafts/${genericDraftId}`);
+        const start = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/start`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            now: "2026-06-01T00:00:00.000Z",
+            ignoredSecret: "do-not-log"
+          }
+        });
+        const readAfterStart = await requestJson(baseUrl, `/api/drafts/${genericDraftId}`);
+        const hover = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/actions/${genericFirstActionId}/hover`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            heroId: genericHeroId,
+            now: "2026-06-01T00:00:05.000Z"
+          }
+        });
+        const lock = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/actions/${genericFirstActionId}/lock`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            heroId: genericHeroId,
+            now: "2026-06-01T00:00:10.000Z"
+          }
+        });
+        const stateAfter = await requestJson(baseUrl, "/api/state");
+
+        expect(stateBefore.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 1
+          }
+        });
+        expect(readBefore.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 1
+          }
+        });
+        expect(start.status).toBe(200);
+        expect(start.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 2,
+            draft: {
+              draft: {
+                status: "LIVE",
+                lockedHeroIds: []
+              }
+            }
+          }
+        });
+        expect(readAfterStart.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 2
+          }
+        });
+        expect(hover.status).toBe(200);
+        expect(hover.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 3,
+            draft: {
+              draft: {
+                actions: expect.arrayContaining([
+                  expect.objectContaining({
+                    id: genericFirstActionId,
+                    status: "HOVER",
+                    heroId: genericHeroId
+                  })
+                ]),
+                lockedHeroIds: []
+              }
+            }
+          }
+        });
+        expect(lock.status).toBe(200);
+        expect(lock.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 4,
+            draft: {
+              summary: {
+                currentPhase: expect.objectContaining({
+                  id: "ban-1-red"
+                })
+              },
+              draft: {
+                actions: expect.arrayContaining([
+                  expect.objectContaining({
+                    id: genericFirstActionId,
+                    status: "LOCKED",
+                    heroId: genericHeroId
+                  })
+                ]),
+                lockedHeroIds: [genericHeroId],
+                bannedHeroIds: [genericHeroId],
+                pickedHeroIds: []
+              }
+            }
+          }
+        });
+        expect(stateAfter.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 4,
+            drafts: {
+              [genericDraftId]: expect.objectContaining({
+                id: genericDraftId,
+                status: "LIVE",
+                actionCounts: expect.objectContaining({
+                  locked: 1
+                })
+              })
+            }
+          }
+        });
+
+        const entries = readAuditLogEntries(tempPackagePath);
+
+        expect(entries).toHaveLength(3);
+        expect(entries).toEqual([
+          expect.objectContaining({
+            event: "DRAFT_STARTED",
+            operatorId: "draft-op",
+            matchId: genericMatchId,
+            draftId: genericDraftId,
+            previousRevision: 1,
+            nextRevision: 2
+          }),
+          expect.objectContaining({
+            event: "HERO_HOVERED",
+            actionId: genericFirstActionId,
+            previousRevision: 2,
+            nextRevision: 3
+          }),
+          expect.objectContaining({
+            event: "HERO_LOCKED",
+            actionId: genericFirstActionId,
+            previousRevision: 3,
+            nextRevision: 4
+          })
+        ]);
+
+        const logText = JSON.stringify(entries);
+        expect(logText).not.toMatch(/do-not-log|ignoredSecret|apiKey|secret|hiddenCompetitiveInformation/i);
+        expect(logText).not.toMatch(/loadHeroes|loadDefaultRulesets|getHeroById|validateDraftAction|getAssetUrl/);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("creates an explicitly requested additional in-memory draft and logs the manual creation", async () => {
+    const tempPackagePath = createTempEventPackage();
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const create = await requestJson(baseUrl, "/api/drafts", {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            draftId: "draft_manual-extra",
+            matchId: genericMatchId,
+            gameId: "game_generic-002",
+            gameCode: "generic-moba",
+            rulesetId: "generic-moba-standard-5v5",
+            now: "2026-06-01T00:30:00.000Z"
+          }
+        });
+        const duplicateCreate = await requestJson(baseUrl, "/api/drafts", {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            draftId: "draft_manual-extra",
+            matchId: genericMatchId,
+            gameId: "game_generic-002",
+            gameCode: "generic-moba",
+            rulesetId: "generic-moba-standard-5v5",
+            now: "2026-06-01T00:30:10.000Z"
+          }
+        });
+
+        expect(create.status).toBe(200);
+        expect(create.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 2,
+            draft: {
+              summary: {
+                id: "draft_manual-extra",
+                gameId: "game_generic-002",
+                status: "READY"
+              }
+            }
+          }
+        });
+        expect(duplicateCreate.status).toBe(409);
+        expect(duplicateCreate.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "DRAFT_ALREADY_EXISTS"
+          }
+        });
+        expect(readAuditLogEntries(tempPackagePath)).toEqual([
+          expect.objectContaining({
+            event: "DRAFT_CREATED",
+            draftId: "draft_manual-extra",
+            previousRevision: 1,
+            nextRevision: 2
+          })
+        ]);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects duplicate heroes, unknown drafts, and invalid payloads without mutating revision or audit log", async () => {
+    const tempPackagePath = createTempEventPackage();
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const start = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/start`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            now: "2026-06-01T01:00:00.000Z"
+          }
+        });
+        const firstLock = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/actions/${genericFirstActionId}/lock`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            heroId: genericHeroId,
+            now: "2026-06-01T01:00:05.000Z"
+          }
+        });
+        const duplicate = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/actions/${genericSecondActionId}/lock`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            heroId: genericHeroId,
+            now: "2026-06-01T01:00:10.000Z"
+          }
+        });
+        const invalidDraft = await requestJson(baseUrl, "/api/drafts/missing-draft/start", {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            now: "2026-06-01T01:00:15.000Z"
+          }
+        });
+        const invalidPayload = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/actions/${genericSecondActionId}/hover`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            now: "2026-06-01T01:00:20.000Z"
+          }
+        });
+        const state = await requestJson(baseUrl, "/api/state");
+
+        expect(start.status).toBe(200);
+        expect(firstLock.status).toBe(200);
+        expect(duplicate.status).toBe(409);
+        expect(duplicate.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "DRAFT_DUPLICATE_HERO"
+          }
+        });
+        expect(invalidDraft.status).toBe(404);
+        expect(invalidDraft.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "DRAFT_NOT_FOUND"
+          }
+        });
+        expect(invalidPayload.status).toBe(400);
+        expect(invalidPayload.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "DRAFT_INVALID_PAYLOAD"
+          }
+        });
+        expect(state.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 3,
+            drafts: {
+              [genericDraftId]: expect.objectContaining({
+                lockedHeroIds: [genericHeroId]
+              })
+            }
+          }
+        });
+        expect(readAuditLogEntries(tempPackagePath)).toHaveLength(2);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("supports manual pause, resume, undo, and redo with confirmation and audit entries", async () => {
+    const tempPackagePath = createTempEventPackage();
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        await requestJson(baseUrl, `/api/drafts/${genericDraftId}/start`, {
+          method: "POST",
+          body: { operatorId: "draft-op", now: "2026-06-01T02:00:00.000Z" }
+        });
+        await requestJson(baseUrl, `/api/drafts/${genericDraftId}/actions/${genericFirstActionId}/lock`, {
+          method: "POST",
+          body: { operatorId: "draft-op", heroId: genericHeroId, now: "2026-06-01T02:00:03.000Z" }
+        });
+
+        const pause = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/pause`, {
+          method: "POST",
+          body: { operatorId: "draft-op", now: "2026-06-01T02:00:08.000Z" }
+        });
+        const resume = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/resume`, {
+          method: "POST",
+          body: { operatorId: "draft-op", now: "2026-06-01T02:00:12.000Z" }
+        });
+        const undoWithoutConfirm = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/undo`, {
+          method: "POST",
+          body: { operatorId: "draft-op", reason: "Operator correction." }
+        });
+        const undo = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/undo`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            confirm: true,
+            reason: "Operator correction.",
+            now: "2026-06-01T02:00:16.000Z"
+          }
+        });
+        const redo = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/redo`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            confirm: true,
+            reason: "Referee confirmed redo.",
+            now: "2026-06-01T02:00:20.000Z"
+          }
+        });
+
+        expect(pause.status).toBe(200);
+        expect(pause.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 4,
+            draft: {
+              draft: {
+                status: "PAUSED"
+              }
+            }
+          }
+        });
+        expect(resume.status).toBe(200);
+        expect(resume.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 5,
+            draft: {
+              draft: {
+                status: "LIVE"
+              }
+            }
+          }
+        });
+        expect(undoWithoutConfirm.status).toBe(409);
+        expect(undoWithoutConfirm.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "DRAFT_CONFIRMATION_REQUIRED"
+          }
+        });
+        expect(undo.status).toBe(200);
+        expect(undo.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 6,
+            draft: {
+              draft: {
+                currentPhaseIndex: 0,
+                lockedHeroIds: [],
+                actions: expect.arrayContaining([
+                  expect.objectContaining({
+                    id: genericFirstActionId,
+                    status: "PENDING",
+                    heroId: null
+                  })
+                ])
+              }
+            }
+          }
+        });
+        expect(redo.status).toBe(200);
+        expect(redo.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 7,
+            draft: {
+              draft: {
+                lockedHeroIds: [genericHeroId],
+                actions: expect.arrayContaining([
+                  expect.objectContaining({
+                    id: genericFirstActionId,
+                    status: "LOCKED",
+                    heroId: genericHeroId
+                  })
+                ])
+              }
+            }
+          }
+        });
+
+        const entries = readAuditLogEntries(tempPackagePath);
+
+        expect(entries.map((entry) => (entry as { event: string }).event)).toEqual([
+          "DRAFT_STARTED",
+          "HERO_LOCKED",
+          "DRAFT_PAUSED",
+          "DRAFT_RESUMED",
+          "DRAFT_ACTION_UNDONE",
+          "DRAFT_ACTION_REDONE"
+        ]);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("does not auto-pick, auto-ban, auto-lock, or auto-advance when a phase timer reaches zero", async () => {
+    const tempPackagePath = createTempEventPackage();
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        await requestJson(baseUrl, `/api/drafts/${genericDraftId}/start`, {
+          method: "POST",
+          body: { operatorId: "draft-op", now: "2026-06-01T03:00:00.000Z" }
+        });
+        const pauseAfterTimeout = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/pause`, {
+          method: "POST",
+          body: { operatorId: "draft-op", now: "2026-06-01T03:02:00.000Z" }
+        });
+
+        expect(pauseAfterTimeout.status).toBe(200);
+        expect(pauseAfterTimeout.body).toMatchObject({
+          ok: true,
+          data: {
+            draft: {
+              draft: {
+                status: "PAUSED",
+                currentPhaseIndex: 0,
+                timer: expect.objectContaining({
+                  remainingSeconds: 0,
+                  isRunning: false
+                }),
+                lockedHeroIds: [],
+                bannedHeroIds: [],
+                pickedHeroIds: [],
+                actions: expect.arrayContaining([
+                  expect.objectContaining({
+                    id: genericFirstActionId,
+                    status: "PENDING",
+                    heroId: null
+                  })
+                ])
+              }
+            }
+          }
+        });
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
   it("resolves every sample event match and game adapter ID to a loaded local adapter", async () => {
     const runtimeState = await createServerRuntimeState({
       eventPackagePath: sampleEventPath,
@@ -468,6 +1119,8 @@ describe("server runtime foundation", () => {
     const sourceFiles = [
       "adapter-loader.ts",
       "api.ts",
+      "audit-log.ts",
+      "draft-runtime.ts",
       "event-package-loader.ts",
       "index.ts",
       "paths.ts",

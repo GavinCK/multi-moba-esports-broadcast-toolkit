@@ -3,6 +3,8 @@ import { pathToFileURL } from "node:url";
 
 export * from "./adapter-loader.js";
 export * from "./api.js";
+export * from "./audit-log.js";
+export * from "./draft-runtime.js";
 export * from "./event-package-loader.js";
 export * from "./paths.js";
 export * from "./result.js";

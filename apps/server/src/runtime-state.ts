@@ -1,9 +1,11 @@
 import { createInitialProductionState, type ProductionRuntimeState } from "@mmbt/core-production";
 import type { GameCode, ProductionState, SystemHealth } from "@mmbt/shared-types";
+import { isAbsolute, join, resolve } from "node:path";
 
 import { getDefaultEventPackagePath, getRepositoryRoot, toDisplayPath } from "./paths.js";
 import { loadEventPackage, type LoadedEventPackage } from "./event-package-loader.js";
 import type { AppResult } from "./result.js";
+import { createAuditLogState, type AuditLogRuntimeState } from "./audit-log.js";
 import {
   getPublicAdapterDetail,
   listPublicAdapterSummaries,
@@ -14,15 +16,24 @@ import {
   type PublicAdapterDetail,
   type PublicAdapterSummary
 } from "./adapter-loader.js";
+import {
+  createDraftRuntime,
+  listDraftSummaries,
+  type DraftRuntimeState,
+  type DraftSummary
+} from "./draft-runtime.js";
 
 export interface ServerRuntimeState {
   serverStartedAt: string;
   repositoryRoot: string;
   eventPackagePath: string;
+  eventPackageRoot: string;
   eventPackageLoadResult: AppResult<LoadedEventPackage>;
   adapters: LoadedLocalAdapters;
   adapterValidationWarnings: AdapterValidationWarning[];
+  drafts: DraftRuntimeState;
   production: ProductionRuntimeState;
+  auditLog: AuditLogRuntimeState;
   revision: number;
   lastStateUpdateAt: string;
 }
@@ -41,6 +52,10 @@ export interface CreateServerRuntimeStateOptions {
   eventPackagePath?: string;
   repositoryRoot?: string;
   now?: string;
+}
+
+function resolveEventPackageRoot(eventPackagePath: string, repositoryRoot: string): string {
+  return resolve(isAbsolute(eventPackagePath) ? eventPackagePath : join(repositoryRoot, eventPackagePath));
 }
 
 function getHealthStatus(loadResult: AppResult<LoadedEventPackage>): SystemHealth["status"] {
@@ -79,10 +94,11 @@ export async function createServerRuntimeState(
   options: CreateServerRuntimeStateOptions = {}
 ): Promise<ServerRuntimeState> {
   const repositoryRoot = options.repositoryRoot ?? getRepositoryRoot();
-  const eventPackagePath = options.eventPackagePath ?? getDefaultEventPackagePath(repositoryRoot);
+  const configuredEventPackagePath = options.eventPackagePath ?? getDefaultEventPackagePath(repositoryRoot);
+  const eventPackageRoot = resolveEventPackageRoot(configuredEventPackagePath, repositoryRoot);
   const now = options.now ?? new Date().toISOString();
   const eventPackageLoadResult = loadEventPackage({
-    packageRoot: eventPackagePath,
+    packageRoot: eventPackageRoot,
     repositoryRoot
   });
   const adapters = await loadLocalGameAdapters({ now });
@@ -90,6 +106,11 @@ export async function createServerRuntimeState(
     ? validateEventPackageAdapterReferences(eventPackageLoadResult.value, adapters)
     : [];
   const loadedPackage = eventPackageLoadResult.ok ? eventPackageLoadResult.value : null;
+  const drafts = createDraftRuntime({
+    eventPackage: loadedPackage,
+    adapters,
+    now
+  });
   const activeMatchId = loadedPackage?.defaults.matchId ?? null;
   const activeGame = loadedPackage?.games.find(
     (game) => game.matchId === activeMatchId && game.gameNumber === 1
@@ -98,16 +119,23 @@ export async function createServerRuntimeState(
   return {
     serverStartedAt: now,
     repositoryRoot,
-    eventPackagePath: toDisplayPath(eventPackagePath, repositoryRoot),
+    eventPackagePath: toDisplayPath(eventPackageRoot, repositoryRoot),
+    eventPackageRoot,
     eventPackageLoadResult,
     adapters,
     adapterValidationWarnings,
+    drafts,
     production: createInitialProductionState({
       status: "PRE_SHOW",
       activeMatchId,
       activeGameNumber: activeMatchId ? 1 : null,
       activeDraftId: activeGame?.draftId ?? null,
       now
+    }),
+    auditLog: createAuditLogState({
+      eventPackageRoot,
+      repositoryRoot,
+      loadedPackage
     }),
     revision: 1,
     lastStateUpdateAt: now
@@ -160,6 +188,12 @@ export function createHealthResponse(
           missingAssets: [],
           warnings: [loadResult.error.message]
         },
+    auditLogStatus: {
+      writable: runtimeState.auditLog.writable,
+      path: runtimeState.auditLog.displayPath ?? undefined,
+      lastWriteAt: runtimeState.auditLog.lastWriteAt,
+      error: runtimeState.auditLog.lastError
+    },
     emergencyReady: true,
     lastStateUpdateAt: runtimeState.lastStateUpdateAt,
     eventPackagePath: runtimeState.eventPackagePath,
@@ -190,7 +224,7 @@ export interface ServerStateSnapshot {
   themes: LoadedEventPackage["themes"];
   currentMatchId: string | null;
   currentGameId: string | null;
-  drafts: Record<string, never>;
+  drafts: Record<string, DraftSummary>;
   production: ProductionRuntimeState;
   adapters: PublicAdapterSummary[];
   adapterStatus: SystemHealth["adapterStatus"];
@@ -269,7 +303,9 @@ export function createStateSnapshot(
     themes: snapshot.themes,
     currentMatchId: runtimeState.production.activeMatchId,
     currentGameId: getCurrentGameId(snapshot, runtimeState.production),
-    drafts: {},
+    drafts: Object.fromEntries(
+      listDraftSummaries(runtimeState.drafts).map((draft) => [draft.id, draft])
+    ),
     production: runtimeState.production,
     adapters: listPublicAdapterSummaries(runtimeState.adapters),
     adapterStatus: createAdapterStatus(runtimeState),
