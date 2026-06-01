@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DashboardView } from "./App";
+import { DashboardView, getAdminSectionFromPath } from "./App";
 import type { DashboardRuntimeState } from "./client/types";
 import type { DashboardClientState } from "./state/dashboardState";
 import { initialDashboardState } from "./state/dashboardState";
@@ -22,7 +22,15 @@ function createSnapshot(): DashboardRuntimeState {
     serverStartedAt: "2026-06-01T00:00:00.000Z",
     now: "2026-06-01T00:00:05.000Z",
     uptimeSeconds: 5,
-    socketClients: [],
+    socketClients: [
+      {
+        id: "socket_raw_123",
+        role: "ADMIN" as const,
+        panel: "admin-dashboard",
+        connectedAt: "2026-06-01T00:00:01.000Z",
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      }
+    ],
     loadedEventPackageId: "sample-event",
     currentProductionState: "PRE_SHOW" as const,
     adapterStatus: {
@@ -31,14 +39,35 @@ function createSnapshot(): DashboardRuntimeState {
         displayName: "Generic MOBA",
         heroCount: 10,
         rulesetCount: 1
+      },
+      aov: {
+        loaded: true,
+        displayName: "Arena of Valor",
+        heroCount: 8,
+        rulesetCount: 1
       }
     },
     assetStatus: {
       missingAssets: [],
-      warnings: []
+      warnings: ["unsafe details withheld from UI"]
+    },
+    auditLogStatus: {
+      writable: true,
+      path: "event-packages/sample-event/logs/production-log.jsonl"
     },
     emergencyReady: true,
-    lastStateUpdateAt: "2026-06-01T00:00:05.000Z"
+    lastStateUpdateAt: "2026-06-01T00:00:05.000Z",
+    validationWarnings: {
+      eventPackage: [
+        {
+          path: "metadata.apiKey",
+          code: "UNSAFE_FIELD",
+          message: "apiKey super-secret-value must not be shown",
+          severity: "warning" as const
+        }
+      ],
+      adapters: []
+    }
   };
 
   return {
@@ -54,7 +83,8 @@ function createSnapshot(): DashboardRuntimeState {
         gameCode: "generic-moba",
         themeId: "default-theme",
         rulesetByGameCode: {
-          "generic-moba": "generic-standard"
+          "generic-moba": "generic-standard",
+          aov: "aov-standard"
         },
         productionLogPath: "logs/production-log.jsonl"
       }
@@ -70,16 +100,42 @@ function createSnapshot(): DashboardRuntimeState {
       {
         id: "team_blue",
         name: "Blue Meteors",
-        shortName: "BLU"
+        shortName: "BLU",
+        countryCode: "HK",
+        primaryColor: "#2563eb",
+        secondaryColor: "#93c5fd"
       },
       {
         id: "team_red",
         name: "Red Titans",
-        shortName: "RED"
+        shortName: "RED",
+        countryCode: "HK",
+        primaryColor: "#dc2626",
+        secondaryColor: "#fca5a5"
       }
     ],
-    players: [],
-    sponsors: [],
+    players: [
+      {
+        id: "player_blue-top",
+        teamId: "team_blue",
+        displayName: "BlueAtlas",
+        role: "Top"
+      },
+      {
+        id: "player_red-mid",
+        teamId: "team_red",
+        displayName: "RedSpark",
+        role: "Mid"
+      }
+    ],
+    sponsors: [
+      {
+        id: "sponsor_presented-by",
+        name: "Local LAN Studios",
+        logoUrl: "assets/sponsor-logos/local-lan-studios.svg",
+        slots: ["PRESENTED_BY", "DRAFT", "SCORE_BUG"]
+      }
+    ],
     games: [
       {
         id: "game_001",
@@ -90,6 +146,19 @@ function createSnapshot(): DashboardRuntimeState {
         redTeamId: "team_red",
         draftId: "draft_generic-001",
         rulesetId: "generic-standard",
+        themeId: "default-theme",
+        status: "DRAFT_READY"
+      },
+      {
+        id: "game_aov-001",
+        matchId: "match_aov-showcase",
+        gameNumber: 1,
+        gameCode: "aov",
+        blueTeamId: "team_blue",
+        redTeamId: "team_red",
+        draftId: "draft_aov-001",
+        rulesetId: "aov-standard",
+        themeId: "default-theme",
         status: "DRAFT_READY"
       }
     ],
@@ -110,6 +179,8 @@ function createSnapshot(): DashboardRuntimeState {
         },
         currentGameNumber: 1,
         status: "READY",
+        sponsorSlotIds: ["sponsor_presented-by"],
+        themeId: "default-theme",
         games: [
           {
             id: "game_001",
@@ -120,6 +191,40 @@ function createSnapshot(): DashboardRuntimeState {
             redTeamId: "team_red",
             draftId: "draft_generic-001",
             rulesetId: "generic-standard",
+            themeId: "default-theme",
+            status: "DRAFT_READY"
+          }
+        ]
+      },
+      {
+        id: "match_aov-showcase",
+        eventId: "event_001",
+        gameCode: "aov",
+        title: "AOV Sample Showcase",
+        format: "BO1",
+        teams: {
+          blue: "team_blue",
+          red: "team_red"
+        },
+        score: {
+          blue: 1,
+          red: 0
+        },
+        currentGameNumber: 1,
+        status: "READY",
+        sponsorSlotIds: ["sponsor_presented-by"],
+        themeId: "default-theme",
+        games: [
+          {
+            id: "game_aov-001",
+            matchId: "match_aov-showcase",
+            gameNumber: 1,
+            gameCode: "aov",
+            blueTeamId: "team_blue",
+            redTeamId: "team_red",
+            draftId: "draft_aov-001",
+            rulesetId: "aov-standard",
+            themeId: "default-theme",
             status: "DRAFT_READY"
           }
         ]
@@ -130,6 +235,11 @@ function createSnapshot(): DashboardRuntimeState {
         id: "generic-standard",
         gameCode: "generic-moba",
         name: "Generic Standard"
+      },
+      {
+        id: "aov-standard",
+        gameCode: "aov",
+        name: "AOV Standard"
       }
     ],
     themes: [
@@ -175,6 +285,34 @@ function createSnapshot(): DashboardRuntimeState {
         lockedHeroIds: [],
         bannedHeroIds: [],
         pickedHeroIds: []
+      },
+      "draft_aov-001": {
+        id: "draft_aov-001",
+        matchId: "match_aov-showcase",
+        gameId: "game_aov-001",
+        gameNumber: 1,
+        gameCode: "aov",
+        rulesetId: "aov-standard",
+        status: "READY",
+        currentPhaseIndex: 0,
+        currentPhase: null,
+        currentActionIds: [],
+        timer: {
+          isRunning: false,
+          remainingSeconds: 0,
+          originalSeconds: 0
+        },
+        actionCounts: {
+          total: 0,
+          pending: 0,
+          hover: 0,
+          locked: 0,
+          skipped: 0,
+          cancelled: 0
+        },
+        lockedHeroIds: [],
+        bannedHeroIds: [],
+        pickedHeroIds: []
       }
     },
     production: {
@@ -192,7 +330,7 @@ function createSnapshot(): DashboardRuntimeState {
       },
       emergency: {
         active: false,
-        message: null
+        message: "private emergency reason must not be rendered"
       },
       overlaySafety: {
         readOnly: true,
@@ -216,14 +354,26 @@ function createSnapshot(): DashboardRuntimeState {
           supportsPostGameStats: false,
           supportsAssetSync: false
         }
+      },
+      {
+        gameCode: "aov",
+        displayName: "Arena of Valor",
+        loaded: true,
+        heroCount: 8,
+        rulesetCount: 1,
+        source: "LOCAL_STATIC_SAMPLE",
+        capabilities: {
+          supportsManualDraft: true,
+          supportsClientReader: false,
+          supportsIngameHud: false,
+          supportsPostGameStats: false,
+          supportsAssetSync: false
+        }
       }
     ],
     adapterStatus: health.adapterStatus,
-    availableAdapterIds: ["generic-moba"],
-    validationWarnings: {
-      eventPackage: [],
-      adapters: []
-    },
+    availableAdapterIds: ["generic-moba", "aov"],
+    validationWarnings: health.validationWarnings,
     health
   };
 }
@@ -241,7 +391,14 @@ function createReadyState(): DashboardClientState {
   };
 }
 
-function renderDashboard(state: DashboardClientState): HTMLDivElement {
+function renderDashboard(
+  state: DashboardClientState,
+  options: {
+    onRefresh?: () => void;
+    initialSection?: Parameters<typeof DashboardView>[0]["initialSection"];
+    initialSelectedMatchId?: string | null;
+  } = {}
+): HTMLDivElement {
   const container = document.createElement("div");
   const root = createRoot(container);
 
@@ -250,7 +407,14 @@ function renderDashboard(state: DashboardClientState): HTMLDivElement {
   mountedContainer = container;
 
   act(() => {
-    root.render(<DashboardView state={state} onRefresh={vi.fn()} />);
+    root.render(
+      <DashboardView
+        state={state}
+        onRefresh={options.onRefresh ?? vi.fn()}
+        initialSection={options.initialSection}
+        initialSelectedMatchId={options.initialSelectedMatchId}
+      />
+    );
   });
 
   return container;
@@ -269,6 +433,12 @@ afterEach(() => {
 });
 
 describe("DashboardView", () => {
+  it("maps documented admin paths to local sections", () => {
+    expect(getAdminSectionFromPath("/admin")).toBe("overview");
+    expect(getAdminSectionFromPath("/admin/matches")).toBe("matches");
+    expect(getAdminSectionFromPath("/admin/system-health")).toBe("system-health");
+  });
+
   it("renders loading state", () => {
     const container = renderDashboard({
       ...initialDashboardState,
@@ -291,6 +461,101 @@ describe("DashboardView", () => {
     expect(text).toContain("PRE_SHOW");
   });
 
+  it("renders match setup detail and allows client-only selected match changes", () => {
+    const container = renderDashboard(createReadyState(), {
+      initialSection: "matches"
+    });
+
+    expect(container.textContent).toContain("Selected Match");
+    expect(container.textContent).toContain("BlueAtlas");
+    expect(container.textContent).toContain("Local LAN Studios");
+
+    const aovViewButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "View" && button.closest("tr")?.textContent?.includes("AOV Sample Showcase")
+    );
+
+    expect(aovViewButton).toBeDefined();
+
+    act(() => {
+      aovViewButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("AOV Sample Showcase");
+    expect(container.textContent).toContain("AOV Standard");
+  });
+
+  it("renders team, player, sponsor, and theme panels from read-only state", () => {
+    const teams = renderDashboard(createReadyState(), { initialSection: "teams" });
+    expect(teams.textContent).toContain("Blue Meteors");
+    expect(teams.textContent).toContain("Red Titans");
+
+    act(() => {
+      mountedRoot?.unmount();
+    });
+    mountedContainer?.remove();
+    mountedRoot = null;
+    mountedContainer = null;
+
+    const players = renderDashboard(createReadyState(), { initialSection: "players" });
+    expect(players.textContent).toContain("BlueAtlas");
+    expect(players.textContent).toContain("RedSpark");
+
+    act(() => {
+      mountedRoot?.unmount();
+    });
+    mountedContainer?.remove();
+    mountedRoot = null;
+    mountedContainer = null;
+
+    const sponsors = renderDashboard(createReadyState(), { initialSection: "sponsors" });
+    expect(sponsors.textContent).toContain("Local LAN Studios");
+
+    act(() => {
+      mountedRoot?.unmount();
+    });
+    mountedContainer?.remove();
+    mountedRoot = null;
+    mountedContainer = null;
+
+    const themes = renderDashboard(createReadyState(), { initialSection: "themes" });
+    expect(themes.textContent).toContain("Default");
+    expect(themes.textContent).toContain("Generic Standard");
+  });
+
+  it("renders system health without raw socket IDs, log paths, warning messages, or emergency details", () => {
+    const container = renderDashboard(createReadyState(), {
+      initialSection: "system-health"
+    });
+    const text = container.textContent ?? "";
+
+    expect(text).toContain("System Health");
+    expect(text).toContain("Connected clients");
+    expect(text).toContain("ADMIN / admin-dashboard");
+    expect(text).toContain("UNSAFE_FIELD");
+    expect(text).not.toContain("socket_raw_123");
+    expect(text).not.toContain("production-log.jsonl");
+    expect(text).not.toContain("super-secret-value");
+    expect(text).not.toContain("private emergency reason");
+  });
+
+  it("renders empty match setup state", () => {
+    const snapshot = {
+      ...createSnapshot(),
+      matches: [],
+      currentMatchId: null
+    };
+    const container = renderDashboard(
+      {
+        ...createReadyState(),
+        snapshot,
+        health: snapshot.health
+      },
+      { initialSection: "matches" }
+    );
+
+    expect(container.textContent).toContain("No matches are available from the loaded package.");
+  });
+
   it("renders a clear error state", () => {
     const container = renderDashboard({
       ...initialDashboardState,
@@ -305,15 +570,30 @@ describe("DashboardView", () => {
     expect(container.textContent).toContain("Failed to fetch");
   });
 
-  it("does not render mutation controls or overlay routes in TQ-080", () => {
-    const container = renderDashboard(createReadyState());
+  it("keeps manual refresh as a read-only command", () => {
+    const onRefresh = vi.fn();
+    const container = renderDashboard(createReadyState(), { onRefresh });
+    const refreshButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Refresh"
+    );
+
+    act(() => {
+      refreshButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render mutation controls or overlay routes in TQ-081", () => {
+    const container = renderDashboard(createReadyState(), {
+      initialSection: "matches"
+    });
     const buttonText = Array.from(container.querySelectorAll("button"))
       .map((button) => button.textContent?.trim())
       .join(" ");
     const allText = container.textContent ?? "";
 
-    expect(buttonText).toBe("Refresh");
-    expect(buttonText).not.toMatch(/Start Draft|Lock|Undo|Reset|Complete|Take|Clear Program|Trigger Emergency/u);
+    expect(buttonText).not.toMatch(/Start Draft|Lock|Undo|Redo|Reset Draft|Complete Draft|Take to Program|Clear Program|Trigger Emergency|Emergency Clear/u);
     expect(allText).not.toContain("/overlay/");
   });
 });
