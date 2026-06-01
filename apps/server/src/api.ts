@@ -56,6 +56,13 @@ import {
   createProductionMutationSummary,
   createProductionSnapshot
 } from "./production-runtime.js";
+import {
+  createNoopRealtimeBroadcaster,
+  createSocketEnvelope,
+  SOCKET_EVENTS,
+  type RealtimeBroadcaster,
+  type StatePatchPayload
+} from "./realtime.js";
 import { apiError, apiSuccess, type AppError } from "./result.js";
 
 const DEFAULT_OPERATOR_ID = "local-operator";
@@ -391,6 +398,199 @@ function createAuditResultSummary(
   return toAuditMetadata({ ...createDraftMutationSummary(entry, actionId) });
 }
 
+interface CommitResult<TValue> {
+  value: TValue;
+  auditEntry: AuditLogEntry;
+}
+
+interface RealtimeDraftSnapshot {
+  summary: ReturnType<typeof createDraftSnapshot>["summary"];
+  draft: Omit<ReturnType<typeof createDraftSnapshot>["draft"], "actions" | "history"> & {
+    actions: Array<Omit<ReturnType<typeof createDraftSnapshot>["draft"]["actions"][number], "operatorId">>;
+    history: [];
+  };
+}
+
+function createRealtimeDraftSnapshot(entry: DraftRuntimeEntry): RealtimeDraftSnapshot {
+  const snapshot = createDraftSnapshot(entry);
+
+  return {
+    summary: snapshot.summary,
+    draft: {
+      ...snapshot.draft,
+      actions: snapshot.draft.actions.map((action) => {
+        const { operatorId: _operatorId, ...publicAction } = action;
+
+        return publicAction;
+      }),
+      history: []
+    }
+  };
+}
+
+function createStatePatchPayload(
+  runtimeState: ServerRuntimeState,
+  auditEntry: AuditLogEntry,
+  changed: string[],
+  entityId?: string
+): StatePatchPayload {
+  return {
+    revision: runtimeState.revision,
+    previousRevision: auditEntry.previousRevision,
+    timestamp: runtimeState.lastStateUpdateAt,
+    reason: auditEntry.event,
+    changed,
+    entityId
+  };
+}
+
+function broadcastLogEntry(realtime: RealtimeBroadcaster, auditEntry: AuditLogEntry): void {
+  realtime.broadcast(
+    SOCKET_EVENTS.LOG_ENTRY,
+    createSocketEnvelope(SOCKET_EVENTS.LOG_ENTRY, { entry: auditEntry }, auditEntry.timestamp, auditEntry.operatorId)
+  );
+}
+
+function broadcastStatePatch(
+  runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
+  auditEntry: AuditLogEntry,
+  changed: string[],
+  entityId?: string
+): void {
+  realtime.broadcast(
+    SOCKET_EVENTS.STATE_PATCH,
+    createSocketEnvelope(
+      SOCKET_EVENTS.STATE_PATCH,
+      createStatePatchPayload(runtimeState, auditEntry, changed, entityId),
+      auditEntry.timestamp,
+      auditEntry.operatorId
+    )
+  );
+}
+
+function shouldBroadcastDraftTimer(previousDraft: DraftState, nextDraft: DraftState, event: string): boolean {
+  return (
+    event === "DRAFT_STARTED" ||
+    event === "DRAFT_PAUSED" ||
+    event === "DRAFT_RESUMED" ||
+    event === "DRAFT_RESET" ||
+    previousDraft.currentPhaseIndex !== nextDraft.currentPhaseIndex ||
+    previousDraft.timer.isRunning !== nextDraft.timer.isRunning ||
+    previousDraft.timer.remainingSeconds !== nextDraft.timer.remainingSeconds ||
+    previousDraft.timer.originalSeconds !== nextDraft.timer.originalSeconds
+  );
+}
+
+function broadcastDraftMutation(
+  runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
+  previousDraft: DraftState,
+  entry: DraftRuntimeEntry,
+  auditEntry: AuditLogEntry
+): void {
+  const draft = createRealtimeDraftSnapshot(entry);
+
+  realtime.broadcast(
+    SOCKET_EVENTS.DRAFT_UPDATED,
+    createSocketEnvelope(
+      SOCKET_EVENTS.DRAFT_UPDATED,
+      {
+        revision: runtimeState.revision,
+        reason: auditEntry.event,
+        draftId: entry.draft.id,
+        matchId: entry.matchId,
+        gameId: entry.gameId,
+        actionId: auditEntry.actionId,
+        draft
+      },
+      auditEntry.timestamp,
+      auditEntry.operatorId
+    )
+  );
+
+  if (shouldBroadcastDraftTimer(previousDraft, entry.draft, auditEntry.event)) {
+    realtime.broadcast(
+      SOCKET_EVENTS.DRAFT_TIMER,
+      createSocketEnvelope(
+        SOCKET_EVENTS.DRAFT_TIMER,
+        {
+          revision: runtimeState.revision,
+          reason: auditEntry.event,
+          draftId: entry.draft.id,
+          matchId: entry.matchId,
+          gameId: entry.gameId,
+          timer: { ...entry.draft.timer }
+        },
+        auditEntry.timestamp,
+        auditEntry.operatorId
+      )
+    );
+  }
+
+  broadcastStatePatch(runtimeState, realtime, auditEntry, ["drafts", `drafts.${entry.draft.id}`], entry.draft.id);
+  broadcastLogEntry(realtime, auditEntry);
+  realtime.broadcastHealthUpdate();
+}
+
+function broadcastProductionMutation(
+  runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
+  auditEntry: AuditLogEntry
+): void {
+  const production = createProductionSnapshot(runtimeState.production);
+  const basePayload = {
+    revision: runtimeState.revision,
+    reason: auditEntry.event,
+    production
+  };
+
+  if (auditEntry.event === "GRAPHICS_PREVIEWED") {
+    realtime.broadcast(
+      SOCKET_EVENTS.GRAPHICS_PREVIEW,
+      createSocketEnvelope(
+        SOCKET_EVENTS.GRAPHICS_PREVIEW,
+        { ...basePayload, graphicTakeState: production.graphicTakeState },
+        auditEntry.timestamp,
+        auditEntry.operatorId
+      )
+    );
+  }
+
+  if (auditEntry.event === "GRAPHICS_TAKEN" || auditEntry.event === "EMERGENCY_TRIGGERED" || auditEntry.event === "EMERGENCY_CLEARED") {
+    realtime.broadcast(
+      SOCKET_EVENTS.GRAPHICS_PROGRAM,
+      createSocketEnvelope(
+        SOCKET_EVENTS.GRAPHICS_PROGRAM,
+        { ...basePayload, graphicTakeState: production.graphicTakeState },
+        auditEntry.timestamp,
+        auditEntry.operatorId
+      )
+    );
+  }
+
+  if (auditEntry.event === "GRAPHICS_CLEARED") {
+    realtime.broadcast(
+      SOCKET_EVENTS.GRAPHICS_CLEAR,
+      createSocketEnvelope(
+        SOCKET_EVENTS.GRAPHICS_CLEAR,
+        { ...basePayload, graphicTakeState: production.graphicTakeState },
+        auditEntry.timestamp,
+        auditEntry.operatorId
+      )
+    );
+  }
+
+  realtime.broadcast(
+    SOCKET_EVENTS.PRODUCTION_STATE,
+    createSocketEnvelope(SOCKET_EVENTS.PRODUCTION_STATE, basePayload, auditEntry.timestamp, auditEntry.operatorId)
+  );
+
+  broadcastStatePatch(runtimeState, realtime, auditEntry, ["production"], runtimeState.production.id);
+  broadcastLogEntry(realtime, auditEntry);
+  realtime.broadcastHealthUpdate();
+}
+
 function commitDraftMutation(
   runtimeState: ServerRuntimeState,
   entry: DraftRuntimeEntry,
@@ -402,7 +602,7 @@ function commitDraftMutation(
     actionId?: string;
     metadata?: JsonObject;
   }
-): AppError | null {
+): CommitResult<DraftRuntimeEntry> | AppError {
   const previousRevision = runtimeState.revision;
   const nextRevision = previousRevision + 1;
   const nextEntry: DraftRuntimeEntry = {
@@ -436,7 +636,10 @@ function commitDraftMutation(
   runtimeState.revision = nextRevision;
   runtimeState.lastStateUpdateAt = audit.timestamp;
 
-  return null;
+  return {
+    value: nextEntry,
+    auditEntry
+  };
 }
 
 function commitDraftCreation(
@@ -447,7 +650,7 @@ function commitDraftCreation(
     timestamp: string;
     metadata?: JsonObject;
   }
-): AppError | null {
+): CommitResult<DraftRuntimeEntry> | AppError {
   const previousRevision = runtimeState.revision;
   const nextRevision = previousRevision + 1;
   const auditEntry: AuditLogEntry = {
@@ -476,7 +679,10 @@ function commitDraftCreation(
   runtimeState.revision = nextRevision;
   runtimeState.lastStateUpdateAt = audit.timestamp;
 
-  return null;
+  return {
+    value: entry,
+    auditEntry
+  };
 }
 
 function createProductionResponse(runtimeState: ServerRuntimeState): {
@@ -498,7 +704,7 @@ function commitProductionMutation(
     timestamp: string;
     metadata?: JsonObject;
   }
-): AppError | null {
+): CommitResult<ProductionRuntimeState> | AppError {
   const previousRevision = runtimeState.revision;
   const nextRevision = previousRevision + 1;
   const auditEntry: AuditLogEntry = {
@@ -528,12 +734,16 @@ function commitProductionMutation(
   runtimeState.revision = nextRevision;
   runtimeState.lastStateUpdateAt = audit.timestamp;
 
-  return null;
+  return {
+    value: nextProduction,
+    auditEntry
+  };
 }
 
 function applyProductionResult(
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
   result: ProductionEngineResult<ProductionRuntimeState>,
   audit: {
     event: string;
@@ -549,12 +759,13 @@ function applyProductionResult(
 
   const commitError = commitProductionMutation(runtimeState, result.value, audit);
 
-  if (commitError) {
+  if ("code" in commitError) {
     sendError(response, commitError);
     return;
   }
 
   sendJson(response, 200, apiSuccess(createProductionResponse(runtimeState)));
+  broadcastProductionMutation(runtimeState, realtime, commitError.auditEntry);
 }
 
 function getMutationTimestamp(body: Record<string, unknown>): string {
@@ -662,6 +873,7 @@ function getRequiredPayloadString(
 function handleDraftCreate(
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
   payload: Record<string, unknown>,
   operatorId: string,
   timestamp: string
@@ -768,12 +980,13 @@ function handleDraftCreate(
     metadata: createPayloadMetadata(payload, { gameId, rulesetId })
   });
 
-  if (commitError) {
+  if ("code" in commitError) {
     sendError(response, commitError);
     return;
   }
 
-  sendMutationSuccess(response, runtimeState, entry);
+  sendMutationSuccess(response, runtimeState, commitError.value);
+  broadcastDraftMutation(runtimeState, realtime, entry.draft, commitError.value, commitError.auditEntry);
 }
 
 function sendMutationSuccess(
@@ -787,6 +1000,7 @@ function sendMutationSuccess(
 function applyDraftResult(
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
   entry: DraftRuntimeEntry,
   result: DraftEngineResult<DraftState>,
   audit: {
@@ -804,12 +1018,12 @@ function applyDraftResult(
 
   const commitError = commitDraftMutation(runtimeState, entry, result.value, audit);
 
-  if (commitError) {
+  if ("code" in commitError) {
     sendError(response, commitError);
     return;
   }
 
-  const nextEntry = runtimeState.drafts.drafts[entry.draft.id];
+  const nextEntry = commitError.value;
 
   if (!nextEntry) {
     sendError(response, {
@@ -821,6 +1035,7 @@ function applyDraftResult(
   }
 
   sendMutationSuccess(response, runtimeState, nextEntry);
+  broadcastDraftMutation(runtimeState, realtime, entry.draft, nextEntry, commitError.auditEntry);
 }
 
 function validateHeroPayload(
@@ -869,6 +1084,7 @@ async function handleDraftPost(
   request: IncomingMessage,
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
   pathParts: string[]
 ): Promise<void> {
   const body = await readJsonBody(request);
@@ -884,7 +1100,7 @@ async function handleDraftPost(
   const timestamp = getMutationTimestamp(payload);
 
   if (pathParts.length === 2) {
-    handleDraftCreate(response, runtimeState, payload, operatorId, timestamp);
+    handleDraftCreate(response, runtimeState, realtime, payload, operatorId, timestamp);
     return;
   }
 
@@ -903,32 +1119,53 @@ async function handleDraftPost(
   }
 
   if (operation === "start" && pathParts.length === 4) {
-    applyDraftResult(response, runtimeState, entry, startDraft(entry.draft, entry.ruleset, { now: timestamp, operatorId }), {
-      event: "DRAFT_STARTED",
-      operatorId,
-      timestamp,
-      metadata: createPayloadMetadata(payload)
-    });
+    applyDraftResult(
+      response,
+      runtimeState,
+      realtime,
+      entry,
+      startDraft(entry.draft, entry.ruleset, { now: timestamp, operatorId }),
+      {
+        event: "DRAFT_STARTED",
+        operatorId,
+        timestamp,
+        metadata: createPayloadMetadata(payload)
+      }
+    );
     return;
   }
 
   if (operation === "pause" && pathParts.length === 4) {
-    applyDraftResult(response, runtimeState, entry, pauseDraft(entry.draft, { now: timestamp, operatorId }), {
-      event: "DRAFT_PAUSED",
-      operatorId,
-      timestamp,
-      metadata: createPayloadMetadata(payload)
-    });
+    applyDraftResult(
+      response,
+      runtimeState,
+      realtime,
+      entry,
+      pauseDraft(entry.draft, { now: timestamp, operatorId }),
+      {
+        event: "DRAFT_PAUSED",
+        operatorId,
+        timestamp,
+        metadata: createPayloadMetadata(payload)
+      }
+    );
     return;
   }
 
   if (operation === "resume" && pathParts.length === 4) {
-    applyDraftResult(response, runtimeState, entry, resumeDraft(entry.draft, { now: timestamp, operatorId }), {
-      event: "DRAFT_RESUMED",
-      operatorId,
-      timestamp,
-      metadata: createPayloadMetadata(payload)
-    });
+    applyDraftResult(
+      response,
+      runtimeState,
+      realtime,
+      entry,
+      resumeDraft(entry.draft, { now: timestamp, operatorId }),
+      {
+        event: "DRAFT_RESUMED",
+        operatorId,
+        timestamp,
+        metadata: createPayloadMetadata(payload)
+      }
+    );
     return;
   }
 
@@ -941,12 +1178,19 @@ async function handleDraftPost(
       return;
     }
 
-    applyDraftResult(response, runtimeState, entry, undoLastAction(entry.draft, entry.ruleset, { now: timestamp, operatorId }), {
-      event: "DRAFT_ACTION_UNDONE",
-      operatorId,
-      timestamp,
-      metadata: createPayloadMetadata(payload)
-    });
+    applyDraftResult(
+      response,
+      runtimeState,
+      realtime,
+      entry,
+      undoLastAction(entry.draft, entry.ruleset, { now: timestamp, operatorId }),
+      {
+        event: "DRAFT_ACTION_UNDONE",
+        operatorId,
+        timestamp,
+        metadata: createPayloadMetadata(payload)
+      }
+    );
     return;
   }
 
@@ -962,6 +1206,7 @@ async function handleDraftPost(
     applyDraftResult(
       response,
       runtimeState,
+      realtime,
       entry,
       redoLastUndoneAction(entry.draft, entry.ruleset, { now: timestamp, operatorId }),
       {
@@ -986,6 +1231,7 @@ async function handleDraftPost(
     applyDraftResult(
       response,
       runtimeState,
+      realtime,
       entry,
       resetDraft(entry.draft, entry.ruleset, { now: timestamp, operatorId, confirmed: true }),
       {
@@ -1011,6 +1257,7 @@ async function handleDraftPost(
     applyDraftResult(
       response,
       runtimeState,
+      realtime,
       entry,
       completeDraft(entry.draft, { now: timestamp, operatorId, confirmed: true }),
       {
@@ -1042,6 +1289,7 @@ async function handleDraftPost(
       applyDraftResult(
         response,
         runtimeState,
+        realtime,
         entry,
         hoverHero(entry.draft, entry.ruleset, { actionId, heroId, now: timestamp, operatorId }),
         {
@@ -1059,6 +1307,7 @@ async function handleDraftPost(
       applyDraftResult(
         response,
         runtimeState,
+        realtime,
         entry,
         lockHero(entry.draft, entry.ruleset, { actionId, heroId, now: timestamp, operatorId }),
         {
@@ -1229,6 +1478,7 @@ function validateProductionReferences(
 function handleProductionStatePost(
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
   payload: Record<string, unknown>,
   operatorId: string,
   timestamp: string
@@ -1285,6 +1535,7 @@ function handleProductionStatePost(
   applyProductionResult(
     response,
     runtimeState,
+    realtime,
     setProductionState(runtimeState.production, {
       status: payload.status,
       activeMatchId: activeMatchId as string | null | undefined,
@@ -1312,6 +1563,7 @@ function handleProductionStatePost(
 function handleProductionPreviewPost(
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
   payload: Record<string, unknown>,
   operatorId: string,
   timestamp: string
@@ -1346,6 +1598,7 @@ function handleProductionPreviewPost(
   applyProductionResult(
     response,
     runtimeState,
+    realtime,
     previewGraphic(runtimeState.production, {
       graphicType: payload.graphicType,
       payload: payload.payload as JsonValue,
@@ -1367,6 +1620,7 @@ function handleProductionPreviewPost(
 function handleProductionTakePost(
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
   payload: Record<string, unknown>,
   operatorId: string,
   timestamp: string
@@ -1374,6 +1628,7 @@ function handleProductionTakePost(
   applyProductionResult(
     response,
     runtimeState,
+    realtime,
     takeGraphic(runtimeState.production, {
       confirmed: payload.confirm === true,
       now: timestamp,
@@ -1393,6 +1648,7 @@ function handleProductionTakePost(
 function handleProductionClearPost(
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
   payload: Record<string, unknown>,
   operatorId: string,
   timestamp: string
@@ -1400,6 +1656,7 @@ function handleProductionClearPost(
   applyProductionResult(
     response,
     runtimeState,
+    realtime,
     clearGraphic(runtimeState.production, {
       confirmed: payload.confirm === true,
       now: timestamp,
@@ -1419,6 +1676,7 @@ function handleProductionClearPost(
 function handleProductionEmergencyPost(
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
   payload: Record<string, unknown>,
   operatorId: string,
   timestamp: string
@@ -1437,6 +1695,7 @@ function handleProductionEmergencyPost(
   applyProductionResult(
     response,
     runtimeState,
+    realtime,
     enterEmergencyMode(runtimeState.production, {
       confirmed: payload.confirm === true,
       message,
@@ -1459,6 +1718,7 @@ function handleProductionEmergencyPost(
 function handleProductionEmergencyClearPost(
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
   payload: Record<string, unknown>,
   operatorId: string,
   timestamp: string
@@ -1466,6 +1726,7 @@ function handleProductionEmergencyClearPost(
   applyProductionResult(
     response,
     runtimeState,
+    realtime,
     clearEmergency(runtimeState.production, {
       confirmed: payload.confirm === true,
       now: timestamp,
@@ -1487,6 +1748,7 @@ async function handleProductionPost(
   request: IncomingMessage,
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
   pathParts: string[]
 ): Promise<void> {
   const body = await readJsonBody(request);
@@ -1503,32 +1765,32 @@ async function handleProductionPost(
   const operation = pathParts[2];
 
   if (operation === "state" && pathParts.length === 3) {
-    handleProductionStatePost(response, runtimeState, payload, operatorId, timestamp);
+    handleProductionStatePost(response, runtimeState, realtime, payload, operatorId, timestamp);
     return;
   }
 
   if (operation === "preview" && pathParts.length === 3) {
-    handleProductionPreviewPost(response, runtimeState, payload, operatorId, timestamp);
+    handleProductionPreviewPost(response, runtimeState, realtime, payload, operatorId, timestamp);
     return;
   }
 
   if (operation === "take" && pathParts.length === 3) {
-    handleProductionTakePost(response, runtimeState, payload, operatorId, timestamp);
+    handleProductionTakePost(response, runtimeState, realtime, payload, operatorId, timestamp);
     return;
   }
 
   if ((operation === "clear" || operation === "clear-program") && pathParts.length === 3) {
-    handleProductionClearPost(response, runtimeState, payload, operatorId, timestamp);
+    handleProductionClearPost(response, runtimeState, realtime, payload, operatorId, timestamp);
     return;
   }
 
   if (operation === "emergency" && pathParts.length === 3) {
-    handleProductionEmergencyPost(response, runtimeState, payload, operatorId, timestamp);
+    handleProductionEmergencyPost(response, runtimeState, realtime, payload, operatorId, timestamp);
     return;
   }
 
   if (operation === "emergency" && pathParts[3] === "clear" && pathParts.length === 4) {
-    handleProductionEmergencyClearPost(response, runtimeState, payload, operatorId, timestamp);
+    handleProductionEmergencyClearPost(response, runtimeState, realtime, payload, operatorId, timestamp);
     return;
   }
 
@@ -1538,7 +1800,8 @@ async function handleProductionPost(
 export async function handleApiRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  runtimeState: ServerRuntimeState
+  runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster = createNoopRealtimeBroadcaster()
 ): Promise<void> {
   const requestUrl = new URL(request.url ?? "/", "http:" + "//localhost");
   const pathname = requestUrl.pathname;
@@ -1550,7 +1813,7 @@ export async function handleApiRequest(
       return;
     }
 
-    await handleDraftPost(request, response, runtimeState, pathParts);
+    await handleDraftPost(request, response, runtimeState, realtime, pathParts);
     return;
   }
 
@@ -1560,7 +1823,7 @@ export async function handleApiRequest(
       return;
     }
 
-    await handleProductionPost(request, response, runtimeState, pathParts);
+    await handleProductionPost(request, response, runtimeState, realtime, pathParts);
     return;
   }
 
@@ -1833,9 +2096,12 @@ export async function handleApiRequest(
   notFound(response);
 }
 
-export function createHttpServer(runtimeState: ServerRuntimeState): Server {
+export function createHttpServer(
+  runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster = createNoopRealtimeBroadcaster()
+): Server {
   return createServer((request, response) => {
-    handleApiRequest(request, response, runtimeState).catch((error: unknown) => {
+    handleApiRequest(request, response, runtimeState, realtime).catch((error: unknown) => {
       const appError = isAppError(error)
         ? error
         : {

@@ -24,6 +24,10 @@
     "@mmbt/game-hok-sample": "workspace:*",
     "@mmbt/game-lol-sample": "workspace:*",
     "@mmbt/shared-types": "workspace:*",
-    "@mmbt/theme-engine": "workspace:*"
+    "@mmbt/theme-engine": "workspace:*",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
   }
 }

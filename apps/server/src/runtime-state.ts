@@ -1,5 +1,5 @@
 import { createInitialProductionState, type ProductionRuntimeState } from "@mmbt/core-production";
-import type { GameCode, ProductionState, SystemHealth } from "@mmbt/shared-types";
+import type { ClientRole, GameCode, ProductionState, SocketClientInfo, SystemHealth } from "@mmbt/shared-types";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { getDefaultEventPackagePath, getRepositoryRoot, toDisplayPath } from "./paths.js";
@@ -35,8 +35,22 @@ export interface ServerRuntimeState {
   drafts: DraftRuntimeState;
   production: ProductionRuntimeState;
   auditLog: AuditLogRuntimeState;
+  socketClients: RuntimeSocketClientInfo[];
   revision: number;
   lastStateUpdateAt: string;
+}
+
+export interface RuntimeSocketClientInfo {
+  id: string;
+  role?: string;
+  panel?: string;
+  clientType?: string;
+  route?: string;
+  matchId?: string;
+  userAgent?: string;
+  connectedAt: string;
+  lastSeenAt: string;
+  readOnly: boolean;
 }
 
 export interface ServerHealthResponse extends SystemHealth {
@@ -138,8 +152,32 @@ export async function createServerRuntimeState(
       repositoryRoot,
       loadedPackage
     }),
+    socketClients: [],
     revision: 1,
     lastStateUpdateAt: now
+  };
+}
+
+function isKnownClientRole(role: string | undefined): role is ClientRole {
+  return (
+    role === "ADMIN" ||
+    role === "PRODUCER" ||
+    role === "DRAFT_OPERATOR" ||
+    role === "REFEREE" ||
+    role === "GRAPHICS_OPERATOR" ||
+    role === "CASTER" ||
+    role === "OBSERVER" ||
+    role === "VIEWER"
+  );
+}
+
+function createSocketClientHealth(client: RuntimeSocketClientInfo): SocketClientInfo {
+  return {
+    id: client.id,
+    role: isKnownClientRole(client.role) ? client.role : undefined,
+    panel: client.panel,
+    connectedAt: client.connectedAt,
+    lastSeenAt: client.lastSeenAt
   };
 }
 
@@ -179,7 +217,7 @@ export function createHealthResponse(
     serverStartedAt: runtimeState.serverStartedAt,
     now,
     uptimeSeconds,
-    socketClients: [],
+    socketClients: runtimeState.socketClients.map(createSocketClientHealth),
     loadedEventPackageId: loadResult.ok ? loadResult.value.packageId : undefined,
     currentProductionState: getCurrentProductionState(runtimeState.production),
     adapterStatus: createAdapterStatus(runtimeState),

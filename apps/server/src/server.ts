@@ -1,7 +1,9 @@
 import type { Server } from "node:http";
 
 import { createHttpServer } from "./api.js";
+import type { RealtimeController } from "./realtime.js";
 import { createServerRuntimeState, type ServerRuntimeState } from "./runtime-state.js";
+import { createSocketRealtimeController } from "./socket.js";
 
 export interface StartServerOptions {
   eventPackagePath?: string;
@@ -15,6 +17,7 @@ export interface StartServerOptions {
 export interface StartedServer {
   server: Server;
   runtimeState: ServerRuntimeState;
+  realtime: RealtimeController;
   host: string;
   port: number;
 }
@@ -22,16 +25,22 @@ export interface StartedServer {
 export async function createServerApp(options: StartServerOptions = {}): Promise<{
   server: Server;
   runtimeState: ServerRuntimeState;
+  realtime: RealtimeController;
 }> {
   const runtimeState = await createServerRuntimeState({
     eventPackagePath: options.eventPackagePath,
     repositoryRoot: options.repositoryRoot,
     now: options.now
   });
+  const realtime = createSocketRealtimeController(runtimeState);
+  const server = createHttpServer(runtimeState, realtime);
+
+  realtime.attach(server);
 
   return {
-    server: createHttpServer(runtimeState),
-    runtimeState
+    server,
+    runtimeState,
+    realtime
   };
 }
 
@@ -39,7 +48,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Sta
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 3000;
   const logger = options.logger ?? console;
-  const { server, runtimeState } = await createServerApp(options);
+  const { server, runtimeState, realtime } = await createServerApp(options);
 
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error): void => {
@@ -61,6 +70,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Sta
   return {
     server,
     runtimeState,
+    realtime,
     host,
     port
   };

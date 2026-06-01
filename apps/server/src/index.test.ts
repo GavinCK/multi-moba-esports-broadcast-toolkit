@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
+import { io as createSocketClient, type Socket as ClientSocket } from "socket.io-client";
 
 import {
   createServerApp,
@@ -37,7 +38,7 @@ async function withServer<TValue>(
   options: { eventPackagePath?: string },
   callback: (context: LocalServerContext) => Promise<TValue>
 ): Promise<TValue> {
-  const { server } = await createServerApp({
+  const { server, realtime } = await createServerApp({
     eventPackagePath: options.eventPackagePath ?? sampleEventPath,
     repositoryRoot,
     now: "2026-05-31T00:00:00.000Z"
@@ -58,6 +59,7 @@ async function withServer<TValue>(
       baseUrl: `http://127.0.0.1:${(address as AddressInfo).port}`
     });
   } finally {
+    await realtime.close();
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {
         if (error) {
@@ -69,6 +71,101 @@ async function withServer<TValue>(
       });
     });
   }
+}
+
+function createLocalSocket(baseUrl: string): ClientSocket {
+  return createSocketClient(baseUrl, {
+    autoConnect: false,
+    reconnection: false,
+    timeout: 1_000,
+    transports: ["websocket"]
+  });
+}
+
+function waitForSocketEvent<TPayload>(
+  socket: ClientSocket,
+  eventName: string,
+  predicate: (payload: TPayload) => boolean = () => true,
+  timeoutMs = 1_500
+): Promise<TPayload> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      socket.off(eventName, onEvent);
+      reject(new Error(`Timed out waiting for Socket.IO event ${eventName}.`));
+    }, timeoutMs);
+
+    const onEvent = (payload: TPayload): void => {
+      try {
+        if (!predicate(payload)) {
+          return;
+        }
+
+        clearTimeout(timeout);
+        socket.off(eventName, onEvent);
+        resolve(payload);
+      } catch (error) {
+        clearTimeout(timeout);
+        socket.off(eventName, onEvent);
+        reject(error);
+      }
+    };
+
+    socket.on(eventName, onEvent);
+  });
+}
+
+async function connectAndReceiveFullState(
+  baseUrl: string,
+  helloPayload: Record<string, unknown> = {
+    role: "VIEWER",
+    panel: "test-client",
+    route: "/test"
+  }
+): Promise<{ socket: ClientSocket; stateFull: unknown }> {
+  const socket = createLocalSocket(baseUrl);
+  const stateFullPromise = waitForSocketEvent<unknown>(socket, "state:full");
+
+  socket.connect();
+
+  const stateFull = await stateFullPromise;
+  const secondStateFullPromise = waitForSocketEvent<unknown>(socket, "state:full");
+  socket.emit("client:hello", helloPayload);
+  await secondStateFullPromise;
+
+  return { socket, stateFull };
+}
+
+async function expectNoSocketEvent<TPayload>(
+  socket: ClientSocket,
+  eventName: string,
+  trigger: () => Promise<void>,
+  timeoutMs = 300
+): Promise<void> {
+  const eventPromise = waitForSocketEvent<TPayload>(socket, eventName, () => true, timeoutMs)
+    .then(() => true)
+    .catch(() => false);
+
+  await trigger();
+
+  expect(await eventPromise).toBe(false);
+}
+
+function expectSocketEnvelope(
+  envelope: unknown,
+  type: string
+): asserts envelope is {
+  type: string;
+  timestamp: string;
+  operatorId?: string;
+  payload: Record<string, unknown>;
+} {
+  expect(envelope).toEqual(
+    expect.objectContaining({
+      type,
+      timestamp: expect.any(String),
+      payload: expect.any(Object)
+    })
+  );
 }
 
 async function requestJson(
@@ -1474,6 +1571,447 @@ describe("server runtime foundation", () => {
     }
   });
 
+  it("starts Socket.IO with the existing HTTP server and sends safe full-state snapshots", async () => {
+    await withServer({}, async ({ baseUrl }) => {
+      const socket = createLocalSocket(baseUrl);
+      const initialStatePromise = waitForSocketEvent<unknown>(socket, "state:full");
+
+      socket.connect();
+
+      try {
+        const initialState = await initialStatePromise;
+
+        expectSocketEnvelope(initialState, "state:full");
+        expect(initialState.payload).toMatchObject({
+          revision: 1,
+          eventPackageId: "sample-event",
+          currentMatchId: genericMatchId
+        });
+
+        const helloStatePromise = waitForSocketEvent<unknown>(socket, "state:full");
+        const healthPromise = waitForSocketEvent<unknown>(
+          socket,
+          "health:update",
+          (payload) => JSON.stringify(payload).includes("draft-operator")
+        );
+
+        socket.emit("client:hello", {
+          role: "DRAFT_OPERATOR",
+          panel: "draft-operator",
+          route: "/draft/match_grand-final",
+          matchId: genericMatchId
+        });
+
+        const helloState = await helloStatePromise;
+        const healthUpdate = await healthPromise;
+
+        expectSocketEnvelope(helloState, "state:full");
+        expectSocketEnvelope(healthUpdate, "health:update");
+
+        const health = await requestJson(baseUrl, "/api/health");
+
+        expect(health.body).toMatchObject({
+          ok: true,
+          data: {
+            socketClients: [
+              expect.objectContaining({
+                id: socket.id,
+                role: "DRAFT_OPERATOR",
+                panel: "draft-operator"
+              })
+            ]
+          }
+        });
+
+        const requestedStatePromise = waitForSocketEvent<unknown>(socket, "state:full");
+        socket.emit("state:request-full");
+        const requestedState = await requestedStatePromise;
+
+        expectSocketEnvelope(requestedState, "state:full");
+        expect(requestedState.payload.revision).toBe(1);
+
+        const restHealth = await requestJson(baseUrl, "/api/health");
+
+        expect(restHealth.status).toBe(200);
+        expect(restHealth.body).toMatchObject({
+          ok: true,
+          data: {
+            loadedEventPackageId: "sample-event"
+          }
+        });
+      } finally {
+        socket.disconnect();
+      }
+    });
+  });
+
+  it("broadcasts accepted draft REST mutations and skips rejected or read-only requests", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-socket-draft-");
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const { socket } = await connectAndReceiveFullState(baseUrl, {
+          role: "DRAFT_OPERATOR",
+          panel: "draft-operator",
+          route: "/draft/match_grand-final",
+          matchId: genericMatchId
+        });
+
+        try {
+          await requestJson(baseUrl, `/api/drafts/${genericDraftId}/start`, {
+            method: "POST",
+            body: {
+              operatorId: "draft-op",
+              now: "2026-06-01T06:00:00.000Z"
+            }
+          });
+
+          const draftUpdatedPromise = waitForSocketEvent<unknown>(
+            socket,
+            "draft:updated",
+            (payload) => JSON.stringify(payload).includes("HERO_LOCKED")
+          );
+          const statePatchPromise = waitForSocketEvent<unknown>(
+            socket,
+            "state:patch",
+            (payload) => JSON.stringify(payload).includes("HERO_LOCKED")
+          );
+          const draftTimerPromise = waitForSocketEvent<unknown>(
+            socket,
+            "draft:timer",
+            (payload) => JSON.stringify(payload).includes("HERO_LOCKED")
+          );
+          const logEntryPromise = waitForSocketEvent<unknown>(
+            socket,
+            "log:entry",
+            (payload) => JSON.stringify(payload).includes("HERO_LOCKED")
+          );
+
+          const lock = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/actions/${genericFirstActionId}/lock`, {
+            method: "POST",
+            body: {
+              operatorId: "draft-op",
+              heroId: genericHeroId,
+              now: "2026-06-01T06:00:10.000Z"
+            }
+          });
+
+          expect(lock.status).toBe(200);
+
+          const draftUpdated = await draftUpdatedPromise;
+          const statePatch = await statePatchPromise;
+          const draftTimer = await draftTimerPromise;
+          const logEntry = await logEntryPromise;
+
+          expectSocketEnvelope(draftUpdated, "draft:updated");
+          expect(draftUpdated.payload).toMatchObject({
+            revision: 3,
+            reason: "HERO_LOCKED",
+            draftId: genericDraftId
+          });
+          expect(JSON.stringify(draftUpdated)).not.toMatch(/ignoredSecret|hiddenCompetitiveInformation/i);
+          expect(JSON.stringify(draftUpdated.payload.draft)).not.toMatch(/"operatorId"/);
+
+          expectSocketEnvelope(statePatch, "state:patch");
+          expect(statePatch.payload).toMatchObject({
+            revision: 3,
+            previousRevision: 2,
+            reason: "HERO_LOCKED",
+            entityId: genericDraftId
+          });
+
+          expectSocketEnvelope(draftTimer, "draft:timer");
+          expectSocketEnvelope(logEntry, "log:entry");
+          expect(logEntry.payload).toMatchObject({
+            entry: expect.objectContaining({
+              event: "HERO_LOCKED",
+              nextRevision: 3
+            })
+          });
+
+          await expectNoSocketEvent(socket, "state:patch", async () => {
+            const duplicate = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/actions/${genericSecondActionId}/lock`, {
+              method: "POST",
+              body: {
+                operatorId: "draft-op",
+                heroId: genericHeroId,
+                now: "2026-06-01T06:00:15.000Z"
+              }
+            });
+
+            expect(duplicate.status).toBe(409);
+            expect(duplicate.body).toMatchObject({
+              ok: false,
+              error: {
+                code: "DRAFT_DUPLICATE_HERO"
+              }
+            });
+          });
+
+          await expectNoSocketEvent(socket, "state:patch", async () => {
+            const state = await requestJson(baseUrl, "/api/state");
+
+            expect(state.status).toBe(200);
+          });
+        } finally {
+          socket.disconnect();
+        }
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("broadcasts production, graphics, and emergency REST mutations with public-safe payloads", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-socket-production-");
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const { socket } = await connectAndReceiveFullState(baseUrl, {
+          role: "PRODUCER",
+          panel: "producer",
+          route: "/producer"
+        });
+
+        try {
+          const productionStatePromise = waitForSocketEvent<unknown>(
+            socket,
+            "production:state",
+            (payload) => JSON.stringify(payload).includes("DRAFT_READY")
+          );
+          const statePatchPromise = waitForSocketEvent<unknown>(
+            socket,
+            "state:patch",
+            (payload) => JSON.stringify(payload).includes("PRODUCTION_STATE_CHANGED")
+          );
+          const logEntryPromise = waitForSocketEvent<unknown>(
+            socket,
+            "log:entry",
+            (payload) => JSON.stringify(payload).includes("PRODUCTION_STATE_CHANGED")
+          );
+
+          const productionState = await requestJson(baseUrl, "/api/production/state", {
+            method: "POST",
+            body: {
+              operatorId: "producer-1",
+              status: "DRAFT_READY",
+              activeMatchId: genericMatchId,
+              activeGameNumber: 1,
+              activeDraftId: genericDraftId,
+              now: "2026-06-01T07:00:00.000Z"
+            }
+          });
+
+          expect(productionState.status).toBe(200);
+          expectSocketEnvelope(await productionStatePromise, "production:state");
+          expectSocketEnvelope(await statePatchPromise, "state:patch");
+          expectSocketEnvelope(await logEntryPromise, "log:entry");
+
+          const previewPromise = waitForSocketEvent<unknown>(
+            socket,
+            "graphics:preview",
+            (payload) => JSON.stringify(payload).includes("GRAPHICS_PREVIEWED")
+          );
+
+          const preview = await requestJson(baseUrl, "/api/production/preview", {
+            method: "POST",
+            body: {
+              operatorId: "producer-1",
+              graphicType: "DRAFT_OVERLAY",
+              payload: {
+                matchId: genericMatchId,
+                draftId: genericDraftId
+              },
+              now: "2026-06-01T07:00:05.000Z"
+            }
+          });
+
+          expect(preview.status).toBe(200);
+          expectSocketEnvelope(await previewPromise, "graphics:preview");
+
+          await expectNoSocketEvent(socket, "graphics:program", async () => {
+            const rejectedTake = await requestJson(baseUrl, "/api/production/take", {
+              method: "POST",
+              body: {
+                operatorId: "producer-1",
+                now: "2026-06-01T07:00:07.000Z"
+              }
+            });
+
+            expect(rejectedTake.status).toBe(409);
+          });
+
+          const programPromise = waitForSocketEvent<unknown>(
+            socket,
+            "graphics:program",
+            (payload) => JSON.stringify(payload).includes("GRAPHICS_TAKEN")
+          );
+          const take = await requestJson(baseUrl, "/api/production/take", {
+            method: "POST",
+            body: {
+              operatorId: "producer-1",
+              confirm: true,
+              now: "2026-06-01T07:00:10.000Z"
+            }
+          });
+
+          expect(take.status).toBe(200);
+          expectSocketEnvelope(await programPromise, "graphics:program");
+
+          const clearPromise = waitForSocketEvent<unknown>(
+            socket,
+            "graphics:clear",
+            (payload) => JSON.stringify(payload).includes("GRAPHICS_CLEARED")
+          );
+          const clear = await requestJson(baseUrl, "/api/production/clear", {
+            method: "POST",
+            body: {
+              operatorId: "producer-1",
+              confirm: true,
+              now: "2026-06-01T07:00:15.000Z"
+            }
+          });
+
+          expect(clear.status).toBe(200);
+          expectSocketEnvelope(await clearPromise, "graphics:clear");
+
+          const emergencyPromise = waitForSocketEvent<unknown>(
+            socket,
+            "production:state",
+            (payload) => JSON.stringify(payload).includes("EMERGENCY_TRIGGERED")
+          );
+          const emergencyProgramPromise = waitForSocketEvent<unknown>(
+            socket,
+            "graphics:program",
+            (payload) => JSON.stringify(payload).includes("EMERGENCY_TRIGGERED")
+          );
+          const emergency = await requestJson(baseUrl, "/api/production/emergency", {
+            method: "POST",
+            body: {
+              operatorId: "producer-1",
+              confirm: true,
+              message: "Stand by",
+              reason: "private-reason-do-not-broadcast",
+              now: "2026-06-01T07:00:20.000Z"
+            }
+          });
+
+          expect(emergency.status).toBe(200);
+
+          const emergencyUpdate = await emergencyPromise;
+          const emergencyProgram = await emergencyProgramPromise;
+          const combinedPayload = JSON.stringify([emergencyUpdate, emergencyProgram]);
+
+          expectSocketEnvelope(emergencyUpdate, "production:state");
+          expectSocketEnvelope(emergencyProgram, "graphics:program");
+          expect(combinedPayload).not.toMatch(/private-reason-do-not-broadcast|apiKey|secret/i);
+          expect(combinedPayload).not.toMatch(/triggeredByOperatorId|clearedByOperatorId/);
+        } finally {
+          socket.disconnect();
+        }
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects socket-side mutation attempts and keeps REST as the authoritative mutation path", async () => {
+    await withServer({}, async ({ baseUrl }) => {
+      const { socket } = await connectAndReceiveFullState(baseUrl, {
+        role: "OVERLAY",
+        panel: "overlay-draft",
+        clientType: "overlay",
+        route: "/overlay/draft/match_grand-final",
+        matchId: genericMatchId
+      });
+
+      try {
+        const errorPromise = waitForSocketEvent<unknown>(
+          socket,
+          "error",
+          (payload) => JSON.stringify(payload).includes("SOCKET_MUTATION_NOT_ALLOWED")
+        );
+
+        socket.emit("draft:lock", {
+          draftId: genericDraftId,
+          actionId: genericFirstActionId,
+          heroId: genericHeroId,
+          correlationId: "overlay-lock-attempt"
+        });
+
+        const error = await errorPromise;
+
+        expectSocketEnvelope(error, "error:socket-mutation-not-allowed");
+        expect(error.payload).toMatchObject({
+          code: "SOCKET_MUTATION_NOT_ALLOWED",
+          correlationId: "overlay-lock-attempt"
+        });
+
+        const stateAfter = await requestJson(baseUrl, "/api/state");
+
+        expect(stateAfter.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 1,
+            drafts: {
+              [genericDraftId]: expect.objectContaining({
+                status: "READY",
+                lockedHeroIds: []
+              })
+            }
+          }
+        });
+      } finally {
+        socket.disconnect();
+      }
+    });
+  });
+
+  it("sends the latest state snapshot after reconnect", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-socket-reconnect-");
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const firstClient = await connectAndReceiveFullState(baseUrl, {
+          role: "PRODUCER",
+          panel: "producer"
+        });
+
+        firstClient.socket.disconnect();
+
+        const mutation = await requestJson(baseUrl, "/api/production/state", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            status: "DRAFT_READY",
+            now: "2026-06-01T08:00:00.000Z"
+          }
+        });
+
+        expect(mutation.status).toBe(200);
+
+        const secondClient = await connectAndReceiveFullState(baseUrl, {
+          role: "VIEWER",
+          panel: "reconnected-client"
+        });
+
+        try {
+          expectSocketEnvelope(secondClient.stateFull, "state:full");
+          expect(secondClient.stateFull.payload).toMatchObject({
+            revision: 2,
+            production: {
+              status: "DRAFT_READY"
+            }
+          });
+        } finally {
+          secondClient.socket.disconnect();
+        }
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
   it("resolves every sample event match and game adapter ID to a loaded local adapter", async () => {
     const runtimeState = await createServerRuntimeState({
       eventPackagePath: sampleEventPath,
@@ -1592,8 +2130,10 @@ describe("server runtime foundation", () => {
       "index.ts",
       "paths.ts",
       "production-runtime.ts",
+      "realtime.ts",
       "result.ts",
       "runtime-state.ts",
+      "socket.ts",
       "server.ts"
     ];
     const sourceText = sourceFiles
@@ -1602,6 +2142,6 @@ describe("server runtime foundation", () => {
 
     expect(sourceText).not.toMatch(/autoPick|autoBan|playerAutomation|championSelectSync|liveClient/i);
     expect(sourceText).not.toMatch(/obsWebSocket|vMixApi|cloudSync|databaseUrl/i);
-    expect(sourceText).not.toMatch(/socket\.io|from "socket\.io"|from 'socket\.io'/i);
+    expect(sourceText).not.toMatch(/draft:start.*startDraft\(|draft:lock.*lockHero\(|production:set-state.*setProductionState\(/is);
   });
 });
