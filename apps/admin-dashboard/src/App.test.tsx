@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DashboardView,
   getAdminSectionFromPath,
+  getCasterMatchIdFromPath,
   getDraftMatchIdFromPath,
   getProducerMatchIdFromPath
 } from "./App";
@@ -682,10 +683,13 @@ describe("DashboardView", () => {
     expect(getAdminSectionFromPath("/draft/match_grand-final")).toBe("draft");
     expect(getAdminSectionFromPath("/producer")).toBe("producer");
     expect(getAdminSectionFromPath("/producer/match_grand-final")).toBe("producer");
+    expect(getAdminSectionFromPath("/caster")).toBe("caster");
+    expect(getAdminSectionFromPath("/caster/match_grand-final")).toBe("caster");
     expect(getAdminSectionFromPath("/admin/matches")).toBe("matches");
     expect(getAdminSectionFromPath("/admin/system-health")).toBe("system-health");
     expect(getDraftMatchIdFromPath("/draft/match_grand-final")).toBe("match_grand-final");
     expect(getProducerMatchIdFromPath("/producer/match_grand-final")).toBe("match_grand-final");
+    expect(getCasterMatchIdFromPath("/caster/match_grand-final")).toBe("match_grand-final");
   });
 
   it("renders loading state", () => {
@@ -1074,5 +1078,70 @@ describe("DashboardView", () => {
     expect(text).not.toContain("/overlay/");
     expect(text).not.toContain("private emergency reason");
     expect(text).not.toContain("sensitive-token-value");
+  });
+
+  it("renders caster panel public match, team, player, draft, and connection readouts", async () => {
+    const readyState = createStateWithDraftStatus("LIVE");
+    const { apiClient } = createDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "caster"
+    });
+
+    await flushAsync();
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("Caster Panel");
+    expect(text).toContain("Grand Final");
+    expect(text).toContain("BO3");
+    expect(text).toContain("0 - 0");
+    expect(text).toContain("Game 1");
+    expect(text).toContain("Blue Team");
+    expect(text).toContain("BlueAtlas");
+    expect(text).toContain("Red Team");
+    expect(text).toContain("RedSpark");
+    expect(text).toContain("Current Draft Summary");
+    expect(text).toContain("Blue ban");
+    expect(text).toContain("Generic Standard");
+    expect(text).toContain("Red Picks");
+    expect(text).toContain("Beta Mystic");
+    expect(text).toContain("Realtime connected");
+    expect(text).not.toContain("socket_raw_123");
+    expect(text).not.toContain("production-log.jsonl");
+    expect(text).not.toContain("private emergency reason");
+    expect(text).not.toContain("sensitive-token-value");
+  });
+
+  it("keeps caster panel read-only and away from mutation endpoints", async () => {
+    const readyState = createStateWithDraftStatus("LIVE");
+    const { apiClient, postCalls } = createDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "caster"
+    });
+
+    await flushAsync();
+
+    const buttonText = Array.from(container.querySelectorAll("button"))
+      .map((button) => button.textContent?.trim())
+      .join(" ");
+    const text = container.textContent ?? "";
+
+    expect(postCalls).toHaveLength(0);
+    expect(buttonText).not.toMatch(/Start Draft|Pause Draft|Resume Draft|Hover Selected|Lock Selected|Undo|Redo|Reset Draft|Complete Draft|Preview Graphic|Take to Program|Clear Program|Trigger Emergency|Clear Emergency/u);
+    expect(text).not.toContain("/overlay/");
+  });
+
+  it("renders a safe missing-match state for caster route preselects", () => {
+    const container = renderDashboard(createReadyState(), {
+      initialSection: "caster",
+      initialSelectedMatchId: "match_unknown"
+    });
+    const text = container.textContent ?? "";
+
+    expect(text).toContain("Requested match is not available in the loaded event package.");
+    expect(text).toContain("Realtime connected");
+    expect(text).not.toContain("socket_raw_123");
+    expect(text).not.toContain("private emergency reason");
   });
 });

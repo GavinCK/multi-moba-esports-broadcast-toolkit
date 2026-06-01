@@ -11,6 +11,7 @@ import type {
   DashboardRuntimeState,
   DashboardValidationWarning
 } from "./client/types";
+import { CasterPanel } from "./caster/CasterPanel";
 import { DraftOperatorPanel } from "./draft/DraftOperatorPanel";
 import { ProducerPanel } from "./producer/ProducerPanel";
 import type { DashboardClientState, DashboardSocketStatus } from "./state/dashboardState";
@@ -36,6 +37,7 @@ export type AdminSectionId =
   | "overview"
   | "draft"
   | "producer"
+  | "caster"
   | "matches"
   | "teams"
   | "players"
@@ -47,6 +49,7 @@ const ADMIN_SECTIONS: Array<{ id: AdminSectionId; label: string; path: string }>
   { id: "overview", label: "Overview", path: "/admin" },
   { id: "draft", label: "Draft Operator", path: "/draft" },
   { id: "producer", label: "Producer Panel", path: "/producer" },
+  { id: "caster", label: "Caster Panel", path: "/caster" },
   { id: "matches", label: "Matches", path: "/admin/matches" },
   { id: "teams", label: "Teams", path: "/admin/teams" },
   { id: "players", label: "Players", path: "/admin/players" },
@@ -85,6 +88,10 @@ export function getAdminSectionFromPath(pathname: string): AdminSectionId {
     return "producer";
   }
 
+  if (normalizedPath === "/caster" || normalizedPath.startsWith("/caster/")) {
+    return "caster";
+  }
+
   const matchingSection = ADMIN_SECTIONS.find((section) => section.path === normalizedPath);
 
   return matchingSection?.id ?? "overview";
@@ -110,6 +117,18 @@ export function getProducerMatchIdFromPath(pathname: string): string | null {
   }
 
   const matchId = normalizedPath.slice("/producer/".length).split("/")[0];
+
+  return matchId ? decodeURIComponent(matchId) : null;
+}
+
+export function getCasterMatchIdFromPath(pathname: string): string | null {
+  const normalizedPath = pathname.replace(/\/+$/u, "");
+
+  if (!normalizedPath.startsWith("/caster/")) {
+    return null;
+  }
+
+  const matchId = normalizedPath.slice("/caster/".length).split("/")[0];
 
   return matchId ? decodeURIComponent(matchId) : null;
 }
@@ -1046,6 +1065,15 @@ export function DashboardView(props: DashboardViewProps): ReactNode {
             routeMatchId={props.initialSelectedMatchId ?? (isBrowser() ? getProducerMatchIdFromPath(window.location.pathname) : null)}
           />
         );
+      case "caster":
+        return (
+          <CasterPanel
+            state={props.state}
+            apiClient={apiClient}
+            onRefresh={props.onRefresh}
+            routeMatchId={props.initialSelectedMatchId ?? (isBrowser() ? getCasterMatchIdFromPath(window.location.pathname) : null)}
+          />
+        );
       case "teams":
         return <TeamsPanel snapshot={snapshot} />;
       case "players":
@@ -1071,7 +1099,9 @@ export function DashboardView(props: DashboardViewProps): ReactNode {
               ? "Draft Operator Panel"
               : activeSection === "producer"
                 ? "Producer Panel"
-                : "Admin Dashboard"}
+                : activeSection === "caster"
+                  ? "Caster Panel"
+                  : "Admin Dashboard"}
           </h1>
         </div>
         <button className="refresh-button" type="button" onClick={props.onRefresh}>

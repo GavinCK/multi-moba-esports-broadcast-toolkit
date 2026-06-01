@@ -121,4 +121,47 @@ describe("connectDashboardSocket", () => {
     expect(emittedEvents).not.toContain("draft:hover");
     expect(emittedEvents).not.toContain("draft:lock");
   });
+
+  it("uses read-only caster socket events on the caster route", () => {
+    const onStatus = vi.fn();
+    const onStateFull = vi.fn();
+    const onHealthUpdate = vi.fn();
+    const onSocketError = vi.fn();
+
+    connectDashboardSocket(
+      {
+        onStatus,
+        onStateFull,
+        onHealthUpdate,
+        onSocketError
+      },
+      { route: "/caster/match_grand-final" }
+    );
+
+    socketMock.handlers.get("connect")?.();
+
+    expect(io).toHaveBeenCalled();
+    expect(socketMock.emit).toHaveBeenCalledWith("client:hello", {
+      role: "CASTER",
+      panel: "caster-panel",
+      route: "/caster/match_grand-final",
+      version: "0.1",
+      capabilities: ["read-only", "state:full", "draft:updated", "production:state", "health:update"]
+    });
+
+    socketMock.handlers.get("draft:updated")?.();
+    socketMock.handlers.get("production:state")?.();
+
+    const emittedEvents = socketMock.emit.mock.calls.map((call) => call[0]);
+
+    expect(emittedEvents).toContain("state:request-full");
+    expect(emittedEvents).not.toContain("draft:start");
+    expect(emittedEvents).not.toContain("draft:hover");
+    expect(emittedEvents).not.toContain("draft:lock");
+    expect(emittedEvents).not.toContain("production:set-state");
+    expect(emittedEvents).not.toContain("graphics:take");
+    expect(emittedEvents).not.toContain("graphics:clear");
+    expect(emittedEvents).not.toContain("emergency:trigger");
+    expect(emittedEvents).not.toContain("emergency:clear");
+  });
 });

@@ -562,6 +562,21 @@ th {
   border-color: #16a34a;
 }
 
+.caster-selection-card {
+  min-height: 150px;
+}
+
+.caster-selection-list {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0 0;
+  padding-left: 20px;
+}
+
+.caster-selection-list li {
+  overflow-wrap: anywhere;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

@@ -14,16 +14,13 @@ Implemented so far:
 - Shared TypeScript contracts and core match/draft/production packages.
 - Local sample event package with Generic MOBA, LoL sample, AOV sample, and HoK sample adapter data.
 - Node server with local event package loading, health/state/adapters/draft/production REST APIs, append-only JSONL audit logging for accepted mutations, and read-only Socket.IO state sync.
-- React + TypeScript + Vite Admin Dashboard shell with read-only REST and Socket.IO client state.
+- React + TypeScript + Vite Admin Dashboard with admin, draft operator, producer, and caster/read-only panels.
 - Root lint, typecheck, test, build, and verify scripts.
 - Root `verify` script that runs lint, typecheck, test, and build.
 
 Not implemented yet:
 
 - Overlay routes.
-- Draft operator controls.
-- Producer controls.
-- Caster panel.
 - OBS/vMix integration.
 - Cloud sync, database persistence, login, official game-client sync, or player-side automation.
 
@@ -72,6 +69,24 @@ pnpm --filter @mmbt/admin-dashboard dev
 ```
 
 The Admin Dashboard runs as a Vite app at `http://127.0.0.1:5173/admin` by default and proxies `/api` plus `/socket.io` to the local server at `http://127.0.0.1:3000`. Set `MMBT_SERVER_URL` before starting the dashboard if the server is on another local port.
+
+Implemented dashboard role routes include:
+
+```text
+/admin
+/admin/matches
+/admin/teams
+/admin/players
+/admin/sponsors
+/admin/themes
+/admin/system-health
+/draft
+/draft/:matchId
+/producer
+/producer/:matchId
+/caster
+/caster/:matchId
+```
 
 ## v0.1 Guardrails
 

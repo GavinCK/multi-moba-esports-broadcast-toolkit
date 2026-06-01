@@ -49,8 +49,8 @@ function readRoute(options: DashboardSocketOptions): string {
 }
 
 function readClientIdentity(route: string): {
-  role: "ADMIN" | "DRAFT_OPERATOR" | "PRODUCER";
-  panel: "admin-dashboard" | "draft-operator" | "producer-panel";
+  role: "ADMIN" | "DRAFT_OPERATOR" | "PRODUCER" | "CASTER";
+  panel: "admin-dashboard" | "draft-operator" | "producer-panel" | "caster-panel";
   capabilities: string[];
 } {
   if (route === "/draft" || route.startsWith("/draft/")) {
@@ -66,6 +66,14 @@ function readClientIdentity(route: string): {
       role: "PRODUCER",
       panel: "producer-panel",
       capabilities: ["read-only", "state:full", "production:state", "health:update"]
+    };
+  }
+
+  if (route === "/caster" || route.startsWith("/caster/")) {
+    return {
+      role: "CASTER",
+      panel: "caster-panel",
+      capabilities: ["read-only", "state:full", "draft:updated", "production:state", "health:update"]
     };
   }
 
