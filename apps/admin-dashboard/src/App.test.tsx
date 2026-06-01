@@ -2,7 +2,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DashboardView, getAdminSectionFromPath, getDraftMatchIdFromPath } from "./App";
+import {
+  DashboardView,
+  getAdminSectionFromPath,
+  getDraftMatchIdFromPath,
+  getProducerMatchIdFromPath
+} from "./App";
 import { DashboardApiError, type DashboardApiClient } from "./client/apiClient";
 import type {
   DashboardAdapterDetail,
@@ -675,9 +680,12 @@ describe("DashboardView", () => {
     expect(getAdminSectionFromPath("/admin")).toBe("overview");
     expect(getAdminSectionFromPath("/draft")).toBe("draft");
     expect(getAdminSectionFromPath("/draft/match_grand-final")).toBe("draft");
+    expect(getAdminSectionFromPath("/producer")).toBe("producer");
+    expect(getAdminSectionFromPath("/producer/match_grand-final")).toBe("producer");
     expect(getAdminSectionFromPath("/admin/matches")).toBe("matches");
     expect(getAdminSectionFromPath("/admin/system-health")).toBe("system-health");
     expect(getDraftMatchIdFromPath("/draft/match_grand-final")).toBe("match_grand-final");
+    expect(getProducerMatchIdFromPath("/producer/match_grand-final")).toBe("match_grand-final");
   });
 
   it("renders loading state", () => {

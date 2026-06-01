@@ -434,6 +434,10 @@ th {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.producer-selector-grid {
+  margin-top: 14px;
+}
+
 .field-label {
   color: #475569;
   display: grid;
@@ -456,6 +460,14 @@ th {
 
 .field-label--narrow {
   max-width: 420px;
+}
+
+.field-action {
+  align-self: end;
+}
+
+.field-action button {
+  width: 100%;
 }
 
 .inline-action {
@@ -536,6 +548,18 @@ th {
 .draft-slot-card p {
   margin: 8px 0 0;
   overflow-wrap: anywhere;
+}
+
+.producer-graphic-card {
+  min-height: 180px;
+}
+
+.producer-graphic-card--preview {
+  border-color: #f59e0b;
+}
+
+.producer-graphic-card--program {
+  border-color: #16a34a;
 }
 
 .modal-backdrop {

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { io } from "socket.io-client";
 
 import { connectDashboardSocket } from "./socketClient";
@@ -30,6 +30,16 @@ vi.mock("socket.io-client", () => ({
 }));
 
 describe("connectDashboardSocket", () => {
+  afterEach(() => {
+    socketMock.handlers.clear();
+    socketMock.emit.mockClear();
+    socketMock.socket.on.mockClear();
+    socketMock.socket.io.on.mockClear();
+    socketMock.socket.removeAllListeners.mockClear();
+    socketMock.socket.disconnect.mockClear();
+    vi.mocked(io).mockClear();
+  });
+
   it("uses read-only draft operator socket events on the draft route", () => {
     const onStatus = vi.fn();
     const onStateFull = vi.fn();
@@ -68,5 +78,47 @@ describe("connectDashboardSocket", () => {
     expect(emittedEvents).not.toContain("production:set-state");
     expect(emittedEvents).not.toContain("graphics:take");
     expect(emittedEvents).not.toContain("emergency:trigger");
+  });
+
+  it("uses read-only producer socket events on the producer route", () => {
+    const onStatus = vi.fn();
+    const onStateFull = vi.fn();
+    const onHealthUpdate = vi.fn();
+    const onSocketError = vi.fn();
+
+    connectDashboardSocket(
+      {
+        onStatus,
+        onStateFull,
+        onHealthUpdate,
+        onSocketError
+      },
+      { route: "/producer/match_grand-final" }
+    );
+
+    socketMock.handlers.get("connect")?.();
+
+    expect(io).toHaveBeenCalled();
+    expect(socketMock.emit).toHaveBeenCalledWith("client:hello", {
+      role: "PRODUCER",
+      panel: "producer-panel",
+      route: "/producer/match_grand-final",
+      version: "0.1",
+      capabilities: ["read-only", "state:full", "production:state", "health:update"]
+    });
+
+    socketMock.handlers.get("production:state")?.();
+    socketMock.handlers.get("graphics:preview")?.();
+
+    const emittedEvents = socketMock.emit.mock.calls.map((call) => call[0]);
+
+    expect(emittedEvents).toContain("state:request-full");
+    expect(emittedEvents).not.toContain("production:set-state");
+    expect(emittedEvents).not.toContain("graphics:take");
+    expect(emittedEvents).not.toContain("graphics:clear");
+    expect(emittedEvents).not.toContain("emergency:trigger");
+    expect(emittedEvents).not.toContain("emergency:clear");
+    expect(emittedEvents).not.toContain("draft:hover");
+    expect(emittedEvents).not.toContain("draft:lock");
   });
 });

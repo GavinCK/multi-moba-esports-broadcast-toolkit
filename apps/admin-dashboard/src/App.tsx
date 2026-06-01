@@ -12,6 +12,7 @@ import type {
   DashboardValidationWarning
 } from "./client/types";
 import { DraftOperatorPanel } from "./draft/DraftOperatorPanel";
+import { ProducerPanel } from "./producer/ProducerPanel";
 import type { DashboardClientState, DashboardSocketStatus } from "./state/dashboardState";
 import {
   createDashboardHealthSummary,
@@ -34,6 +35,7 @@ import { useDashboardState } from "./state/useDashboardState";
 export type AdminSectionId =
   | "overview"
   | "draft"
+  | "producer"
   | "matches"
   | "teams"
   | "players"
@@ -44,6 +46,7 @@ export type AdminSectionId =
 const ADMIN_SECTIONS: Array<{ id: AdminSectionId; label: string; path: string }> = [
   { id: "overview", label: "Overview", path: "/admin" },
   { id: "draft", label: "Draft Operator", path: "/draft" },
+  { id: "producer", label: "Producer Panel", path: "/producer" },
   { id: "matches", label: "Matches", path: "/admin/matches" },
   { id: "teams", label: "Teams", path: "/admin/teams" },
   { id: "players", label: "Players", path: "/admin/players" },
@@ -78,6 +81,10 @@ export function getAdminSectionFromPath(pathname: string): AdminSectionId {
     return "draft";
   }
 
+  if (normalizedPath === "/producer" || normalizedPath.startsWith("/producer/")) {
+    return "producer";
+  }
+
   const matchingSection = ADMIN_SECTIONS.find((section) => section.path === normalizedPath);
 
   return matchingSection?.id ?? "overview";
@@ -91,6 +98,18 @@ export function getDraftMatchIdFromPath(pathname: string): string | null {
   }
 
   const matchId = normalizedPath.slice("/draft/".length).split("/")[0];
+
+  return matchId ? decodeURIComponent(matchId) : null;
+}
+
+export function getProducerMatchIdFromPath(pathname: string): string | null {
+  const normalizedPath = pathname.replace(/\/+$/u, "");
+
+  if (!normalizedPath.startsWith("/producer/")) {
+    return null;
+  }
+
+  const matchId = normalizedPath.slice("/producer/".length).split("/")[0];
 
   return matchId ? decodeURIComponent(matchId) : null;
 }
@@ -1018,6 +1037,15 @@ export function DashboardView(props: DashboardViewProps): ReactNode {
             routeMatchId={props.initialSelectedMatchId ?? (isBrowser() ? getDraftMatchIdFromPath(window.location.pathname) : null)}
           />
         );
+      case "producer":
+        return (
+          <ProducerPanel
+            state={props.state}
+            apiClient={apiClient}
+            onRefresh={props.onRefresh}
+            routeMatchId={props.initialSelectedMatchId ?? (isBrowser() ? getProducerMatchIdFromPath(window.location.pathname) : null)}
+          />
+        );
       case "teams":
         return <TeamsPanel snapshot={snapshot} />;
       case "players":
@@ -1038,7 +1066,13 @@ export function DashboardView(props: DashboardViewProps): ReactNode {
       <header className="dashboard-header">
         <div>
           <p className="eyebrow">Multi-MOBA Broadcast Toolkit v0.1</p>
-          <h1>{activeSection === "draft" ? "Draft Operator Panel" : "Admin Dashboard"}</h1>
+          <h1>
+            {activeSection === "draft"
+              ? "Draft Operator Panel"
+              : activeSection === "producer"
+                ? "Producer Panel"
+                : "Admin Dashboard"}
+          </h1>
         </div>
         <button className="refresh-button" type="button" onClick={props.onRefresh}>
           Refresh
