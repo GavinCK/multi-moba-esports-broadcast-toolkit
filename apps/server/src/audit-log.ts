@@ -26,6 +26,8 @@ export interface AuditLogEntry {
   draftId?: string;
   actionId?: string;
   operatorId?: string;
+  productionState?: string;
+  graphicType?: string;
   previousRevision: number;
   nextRevision: number;
   result: JsonObject;

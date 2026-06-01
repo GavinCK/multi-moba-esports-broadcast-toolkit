@@ -178,6 +178,8 @@ describe("server runtime foundation", () => {
     const rootHealth = await fetchJson("/health");
     const eventPackage = await fetchJson("/api/event-package");
     const state = await fetchJson("/api/state");
+    const production = await fetchJson("/api/production/state");
+    const productionAlias = await fetchJson("/api/production");
     const events = await fetchJson("/api/events");
     const matches = await fetchJson("/api/matches");
     const teams = await fetchJson("/api/teams");
@@ -260,6 +262,35 @@ describe("server runtime foundation", () => {
         }
       }
     });
+
+    expect(production.status).toBe(200);
+    expectApiEnvelope(production.body, true);
+    expect(production.body).toMatchObject({
+      ok: true,
+      data: {
+        revision: 1,
+        production: {
+          status: "PRE_SHOW",
+          activeMatchId: genericMatchId,
+          activeGameNumber: 1,
+          activeDraftId: genericDraftId,
+          graphicTakeState: {
+            status: "IDLE",
+            previewPayload: null,
+            programPayload: null
+          },
+          emergency: {
+            active: false,
+            message: null
+          },
+          overlaySafety: {
+            readOnly: true,
+            mutationAllowed: false
+          }
+        }
+      }
+    });
+    expect(productionAlias.body).toEqual(production.body);
 
     expect(events.status).toBe(200);
     expectApiEnvelope(events.body, true);
@@ -1015,6 +1046,434 @@ describe("server runtime foundation", () => {
     }
   });
 
+  it("applies manual production state, graphics, and emergency mutations with audit entries", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-production-api-");
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const readBefore = await requestJson(baseUrl, "/api/production/state");
+        const stateReadBefore = await requestJson(baseUrl, "/api/state");
+        const productionState = await requestJson(baseUrl, "/api/production/state", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            status: "DRAFT_READY",
+            activeMatchId: genericMatchId,
+            activeGameNumber: 1,
+            activeDraftId: genericDraftId,
+            rawRequestOnly: "do-not-log",
+            now: "2026-06-01T04:00:00.000Z"
+          }
+        });
+        const preview = await requestJson(baseUrl, "/api/production/preview", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            graphicType: "DRAFT_OVERLAY",
+            payload: {
+              matchId: genericMatchId,
+              draftId: genericDraftId,
+              displayMode: "preview"
+            },
+            rawRequestOnly: "do-not-log",
+            now: "2026-06-01T04:00:05.000Z"
+          }
+        });
+        const takeWithoutConfirm = await requestJson(baseUrl, "/api/production/take", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            now: "2026-06-01T04:00:08.000Z"
+          }
+        });
+        const take = await requestJson(baseUrl, "/api/production/take", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            confirm: true,
+            now: "2026-06-01T04:00:10.000Z"
+          }
+        });
+        const clearWithoutConfirm = await requestJson(baseUrl, "/api/production/clear", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            now: "2026-06-01T04:00:12.000Z"
+          }
+        });
+        const clear = await requestJson(baseUrl, "/api/production/clear-program", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            confirm: true,
+            now: "2026-06-01T04:00:15.000Z"
+          }
+        });
+        const emergencyWithoutConfirm = await requestJson(baseUrl, "/api/production/emergency", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            message: "Stand by",
+            now: "2026-06-01T04:00:18.000Z"
+          }
+        });
+        const emergency = await requestJson(baseUrl, "/api/production/emergency", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            confirm: true,
+            message: "Stand by",
+            reason: "do-not-log",
+            now: "2026-06-01T04:00:20.000Z"
+          }
+        });
+        const emergencyClear = await requestJson(baseUrl, "/api/production/emergency/clear", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            confirm: true,
+            reason: "do-not-log",
+            now: "2026-06-01T04:00:25.000Z"
+          }
+        });
+        const readAfter = await requestJson(baseUrl, "/api/production/state");
+        const stateReadAfter = await requestJson(baseUrl, "/api/state");
+
+        expect(readBefore.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 1,
+            production: {
+              status: "PRE_SHOW"
+            }
+          }
+        });
+        expect(stateReadBefore.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 1
+          }
+        });
+        expect(productionState.status).toBe(200);
+        expect(productionState.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 2,
+            production: {
+              status: "DRAFT_READY",
+              activeMatchId: genericMatchId,
+              activeDraftId: genericDraftId
+            }
+          }
+        });
+        expect(preview.status).toBe(200);
+        expect(preview.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 3,
+            production: {
+              graphicTakeState: {
+                status: "PREVIEW",
+                graphicType: "DRAFT_OVERLAY",
+                previewPayload: {
+                  matchId: genericMatchId,
+                  draftId: genericDraftId
+                },
+                programPayload: null
+              }
+            }
+          }
+        });
+        expect(takeWithoutConfirm.status).toBe(409);
+        expect(takeWithoutConfirm.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "GRAPHICS_CONFIRMATION_REQUIRED"
+          }
+        });
+        expect(take.status).toBe(200);
+        expect(take.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 4,
+            production: {
+              graphicTakeState: {
+                status: "ON_PROGRAM",
+                previewPayload: null,
+                programPayload: {
+                  matchId: genericMatchId,
+                  draftId: genericDraftId
+                }
+              }
+            }
+          }
+        });
+        expect(clearWithoutConfirm.status).toBe(409);
+        expect(clearWithoutConfirm.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "GRAPHICS_CONFIRMATION_REQUIRED"
+          }
+        });
+        expect(clear.status).toBe(200);
+        expect(clear.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 5,
+            production: {
+              graphicTakeState: {
+                status: "IDLE",
+                programPayload: null
+              }
+            }
+          }
+        });
+        expect(emergencyWithoutConfirm.status).toBe(409);
+        expect(emergencyWithoutConfirm.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "EMERGENCY_CONFIRMATION_REQUIRED"
+          }
+        });
+        expect(emergency.status).toBe(200);
+        expect(emergency.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 6,
+            production: {
+              emergency: {
+                active: true,
+                message: "Stand by",
+                triggeredAt: "2026-06-01T04:00:20.000Z"
+              }
+            }
+          }
+        });
+        expect(emergencyClear.status).toBe(200);
+        expect(emergencyClear.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 7,
+            production: {
+              emergency: {
+                active: false,
+                message: "Stand by",
+                clearedAt: "2026-06-01T04:00:25.000Z"
+              }
+            }
+          }
+        });
+        expect(readAfter.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 7
+          }
+        });
+        expect(stateReadAfter.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 7,
+            production: {
+              status: "DRAFT_READY",
+              emergency: {
+                active: false,
+                message: "Stand by"
+              }
+            }
+          }
+        });
+
+        const stateReadAfterText = JSON.stringify(stateReadAfter.body);
+        expect(stateReadAfterText).not.toMatch(/triggeredByOperatorId|clearedByOperatorId|reason|rawRequestOnly/);
+
+        const entries = readAuditLogEntries(tempPackagePath);
+
+        expect(entries.map((entry) => (entry as { event: string }).event)).toEqual([
+          "PRODUCTION_STATE_CHANGED",
+          "GRAPHICS_PREVIEWED",
+          "GRAPHICS_TAKEN",
+          "GRAPHICS_CLEARED",
+          "EMERGENCY_TRIGGERED",
+          "EMERGENCY_CLEARED"
+        ]);
+        expect(entries).toEqual([
+          expect.objectContaining({
+            event: "PRODUCTION_STATE_CHANGED",
+            operatorId: "producer-1",
+            previousRevision: 1,
+            nextRevision: 2,
+            productionState: "DRAFT_READY"
+          }),
+          expect.objectContaining({
+            event: "GRAPHICS_PREVIEWED",
+            previousRevision: 2,
+            nextRevision: 3,
+            graphicType: "DRAFT_OVERLAY"
+          }),
+          expect.objectContaining({
+            event: "GRAPHICS_TAKEN",
+            previousRevision: 3,
+            nextRevision: 4
+          }),
+          expect.objectContaining({
+            event: "GRAPHICS_CLEARED",
+            previousRevision: 4,
+            nextRevision: 5
+          }),
+          expect.objectContaining({
+            event: "EMERGENCY_TRIGGERED",
+            previousRevision: 5,
+            nextRevision: 6
+          }),
+          expect.objectContaining({
+            event: "EMERGENCY_CLEARED",
+            previousRevision: 6,
+            nextRevision: 7
+          })
+        ]);
+
+        const logText = JSON.stringify(entries);
+        expect(logText).not.toMatch(/do-not-log|rawRequestOnly|apiKey|secret|hiddenCompetitiveInformation/i);
+        expect(logText).not.toMatch(/loadHeroes|loadDefaultRulesets|getHeroById|validateDraftAction|getAssetUrl/);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects invalid production payloads and transitions without mutating revision or audit log", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-production-invalid-");
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const invalidBody = await requestJson(baseUrl, "/api/production/state", {
+          method: "POST",
+          body: []
+        });
+        const invalidTransition = await requestJson(baseUrl, "/api/production/state", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            status: "GAME_LIVE",
+            now: "2026-06-01T05:00:00.000Z"
+          }
+        });
+        const unsafePreview = await requestJson(baseUrl, "/api/production/preview", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            graphicType: "DRAFT_OVERLAY",
+            payload: {
+              apiKey: "do-not-log"
+            },
+            now: "2026-06-01T05:00:05.000Z"
+          }
+        });
+        const unknownMatch = await requestJson(baseUrl, "/api/production/state", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            status: "DRAFT_READY",
+            activeMatchId: "match_missing",
+            now: "2026-06-01T05:00:10.000Z"
+          }
+        });
+        const stateAfterRejected = await requestJson(baseUrl, "/api/state");
+
+        const draftReady = await requestJson(baseUrl, "/api/production/state", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            status: "DRAFT_READY",
+            now: "2026-06-01T05:00:15.000Z"
+          }
+        });
+        const draftLive = await requestJson(baseUrl, "/api/production/state", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            status: "DRAFT_LIVE",
+            now: "2026-06-01T05:00:20.000Z"
+          }
+        });
+        const liveWithoutConfirm = await requestJson(baseUrl, "/api/production/state", {
+          method: "POST",
+          body: {
+            operatorId: "producer-1",
+            status: "DRAFT_COMPLETE",
+            now: "2026-06-01T05:00:25.000Z"
+          }
+        });
+        const finalState = await requestJson(baseUrl, "/api/state");
+
+        expect(invalidBody.status).toBe(400);
+        expect(invalidBody.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "PRODUCTION_INVALID_PAYLOAD"
+          }
+        });
+        expect(invalidTransition.status).toBe(409);
+        expect(invalidTransition.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "PRODUCTION_INVALID_STATE"
+          }
+        });
+        expect(unsafePreview.status).toBe(400);
+        expect(unsafePreview.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "PRODUCTION_INVALID_PAYLOAD"
+          }
+        });
+        expect(unknownMatch.status).toBe(404);
+        expect(unknownMatch.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "MATCH_NOT_FOUND"
+          }
+        });
+        expect(stateAfterRejected.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 1,
+            production: {
+              status: "PRE_SHOW"
+            }
+          }
+        });
+        expect(draftReady.status).toBe(200);
+        expect(draftLive.status).toBe(200);
+        expect(liveWithoutConfirm.status).toBe(409);
+        expect(liveWithoutConfirm.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "PRODUCTION_CONFIRMATION_REQUIRED"
+          }
+        });
+        expect(finalState.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 3,
+            production: {
+              status: "DRAFT_LIVE"
+            }
+          }
+        });
+
+        const entries = readAuditLogEntries(tempPackagePath);
+
+        expect(entries.map((entry) => (entry as { event: string }).event)).toEqual([
+          "PRODUCTION_STATE_CHANGED",
+          "PRODUCTION_STATE_CHANGED"
+        ]);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
   it("resolves every sample event match and game adapter ID to a loaded local adapter", async () => {
     const runtimeState = await createServerRuntimeState({
       eventPackagePath: sampleEventPath,
@@ -1107,12 +1566,20 @@ describe("server runtime foundation", () => {
     const matches = await fetchJson("/api/matches");
     const adapters = await fetchJson("/api/adapters");
     const state = await fetchJson("/api/state");
+    const overlayRoute = await fetchJson("/overlay/program");
     const responseText = JSON.stringify([eventPackage.body, matches.body, adapters.body, state.body]);
 
     expect(responseText).not.toMatch(/hiddenCompetitiveInformation|hiddenOpponentData|apiKey|secret/i);
     expect(responseText).not.toMatch(/https?:\/\//i);
     expect(responseText).not.toMatch(/file:\/\//i);
     expect(responseText).not.toMatch(/riotApi|lcuReader|dataDragon|garenaApi|tencentApi|timiApi/i);
+    expect(overlayRoute.status).toBe(404);
+    expect(overlayRoute.body).toMatchObject({
+      ok: false,
+      error: {
+        code: "ROUTE_NOT_FOUND"
+      }
+    });
   });
 
   it("does not add runtime hooks for forbidden automation or external integrations", () => {
@@ -1124,6 +1591,7 @@ describe("server runtime foundation", () => {
       "event-package-loader.ts",
       "index.ts",
       "paths.ts",
+      "production-runtime.ts",
       "result.ts",
       "runtime-state.ts",
       "server.ts"

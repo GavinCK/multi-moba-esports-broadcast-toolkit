@@ -22,6 +22,7 @@ import {
   type DraftRuntimeState,
   type DraftSummary
 } from "./draft-runtime.js";
+import { createProductionSnapshot, type PublicProductionState } from "./production-runtime.js";
 
 export interface ServerRuntimeState {
   serverStartedAt: string;
@@ -225,7 +226,7 @@ export interface ServerStateSnapshot {
   currentMatchId: string | null;
   currentGameId: string | null;
   drafts: Record<string, DraftSummary>;
-  production: ProductionRuntimeState;
+  production: PublicProductionState;
   adapters: PublicAdapterSummary[];
   adapterStatus: SystemHealth["adapterStatus"];
   availableAdapterIds: GameCode[];
@@ -267,7 +268,7 @@ export function createStateSnapshot(
       currentMatchId: runtimeState.production.activeMatchId,
       currentGameId: null,
       drafts: {},
-      production: runtimeState.production,
+      production: createProductionSnapshot(runtimeState.production),
       adapters: listPublicAdapterSummaries(runtimeState.adapters),
       adapterStatus: createAdapterStatus(runtimeState),
       availableAdapterIds: runtimeState.adapters.adapters
@@ -306,7 +307,7 @@ export function createStateSnapshot(
     drafts: Object.fromEntries(
       listDraftSummaries(runtimeState.drafts).map((draft) => [draft.id, draft])
     ),
-    production: runtimeState.production,
+    production: createProductionSnapshot(runtimeState.production),
     adapters: listPublicAdapterSummaries(runtimeState.adapters),
     adapterStatus: createAdapterStatus(runtimeState),
     availableAdapterIds: runtimeState.adapters.adapters

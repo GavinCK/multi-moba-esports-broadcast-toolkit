@@ -13,7 +13,21 @@ import {
   type DraftEngineError,
   type DraftEngineResult
 } from "@mmbt/core-draft";
-import type { DraftState, JsonObject } from "@mmbt/shared-types";
+import {
+  clearEmergency,
+  clearGraphic,
+  enterEmergencyMode,
+  isGraphicType,
+  isLiveProductionStatus,
+  isProductionStatus,
+  previewGraphic,
+  setProductionState,
+  takeGraphic,
+  type ProductionEngineError,
+  type ProductionEngineResult,
+  type ProductionRuntimeState
+} from "@mmbt/core-production";
+import type { DraftState, JsonObject, JsonValue } from "@mmbt/shared-types";
 
 import {
   appendAuditLogEntry,
@@ -38,11 +52,27 @@ import {
   listRuntimeAdapters,
   type ServerRuntimeState
 } from "./runtime-state.js";
+import {
+  createProductionMutationSummary,
+  createProductionSnapshot
+} from "./production-runtime.js";
 import { apiError, apiSuccess, type AppError } from "./result.js";
 
 const DEFAULT_OPERATOR_ID = "local-operator";
 const MAX_BODY_BYTES = 1024 * 1024;
 const UNSAFE_OPERATOR_ID_PATTERN = new RegExp(["api[_-]?key", `sec${"ret"}`, "token", "password"].join("|"), "i");
+const UNSAFE_PRODUCTION_PAYLOAD_KEY_PATTERN = new RegExp(
+  [
+    "api[_-]?key",
+    `sec${"ret"}`,
+    "token",
+    "password",
+    `hidden${"Competitive"}Information`,
+    `hidden${"Opponent"}Data`
+  ].join("|"),
+  "i"
+);
+const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
@@ -241,12 +271,76 @@ function sendDraftEngineError(response: ServerResponse, error: DraftEngineError)
   });
 }
 
+function getProductionEngineErrorStatus(error: ProductionEngineError): number {
+  if (
+    error.code === "production-confirmation-required" ||
+    error.code === "graphics-confirmation-required" ||
+    error.code === "emergency-confirmation-required"
+  ) {
+    return 409;
+  }
+
+  if (error.code === "graphics-invalid-type" || error.code === "graphics-invalid-payload") {
+    return 400;
+  }
+
+  return 409;
+}
+
+function getProductionEngineErrorCode(error: ProductionEngineError): string {
+  switch (error.code) {
+    case "production-confirmation-required":
+      return "PRODUCTION_CONFIRMATION_REQUIRED";
+    case "production-invalid-game-number":
+    case "production-invalid-state":
+    case "production-invalid-transition":
+      return "PRODUCTION_INVALID_STATE";
+    case "graphics-confirmation-required":
+      return "GRAPHICS_CONFIRMATION_REQUIRED";
+    case "graphics-invalid-type":
+      return "GRAPHICS_INVALID_TYPE";
+    case "graphics-invalid-payload":
+      return "GRAPHICS_INVALID_PAYLOAD";
+    case "graphics-preview-required":
+      return "GRAPHICS_PREVIEW_REQUIRED";
+    case "graphics-program-empty":
+      return "GRAPHICS_PROGRAM_EMPTY";
+    case "emergency-confirmation-required":
+      return "EMERGENCY_CONFIRMATION_REQUIRED";
+    case "emergency-already-active":
+      return "EMERGENCY_ALREADY_ACTIVE";
+    case "emergency-not-active":
+      return "EMERGENCY_NOT_ACTIVE";
+    default:
+      return "PRODUCTION_INVALID_ACTION";
+  }
+}
+
+function sendProductionEngineError(response: ServerResponse, error: ProductionEngineError): void {
+  sendError(response, {
+    code: getProductionEngineErrorCode(error),
+    message: error.message,
+    httpStatus: getProductionEngineErrorStatus(error),
+    details: error.details
+  });
+}
+
 function validateRecordBody(body: unknown): AppError | null {
   return isRecord(body)
     ? null
     : {
         code: "DRAFT_INVALID_PAYLOAD",
         message: "Draft mutation payload must be a JSON object.",
+        httpStatus: 400
+      };
+}
+
+function validateProductionRecordBody(body: unknown): AppError | null {
+  return isRecord(body)
+    ? null
+    : {
+        code: "PRODUCTION_INVALID_PAYLOAD",
+        message: "Production mutation payload must be a JSON object.",
         httpStatus: 400
       };
 }
@@ -385,6 +479,84 @@ function commitDraftCreation(
   return null;
 }
 
+function createProductionResponse(runtimeState: ServerRuntimeState): {
+  revision: number;
+  production: ReturnType<typeof createProductionSnapshot>;
+} {
+  return {
+    revision: runtimeState.revision,
+    production: createProductionSnapshot(runtimeState.production)
+  };
+}
+
+function commitProductionMutation(
+  runtimeState: ServerRuntimeState,
+  nextProduction: ProductionRuntimeState,
+  audit: {
+    event: string;
+    operatorId: string;
+    timestamp: string;
+    metadata?: JsonObject;
+  }
+): AppError | null {
+  const previousRevision = runtimeState.revision;
+  const nextRevision = previousRevision + 1;
+  const auditEntry: AuditLogEntry = {
+    id: createAuditLogEntryId(audit.timestamp, nextRevision, audit.event),
+    timestamp: audit.timestamp,
+    event: audit.event,
+    eventType: audit.event,
+    eventPackageId: getLoadedEventPackage(runtimeState)?.packageId ?? "unknown-event-package",
+    eventId: getLoadedEventPackage(runtimeState)?.event.id,
+    matchId: nextProduction.activeMatchId ?? undefined,
+    draftId: nextProduction.activeDraftId ?? undefined,
+    operatorId: audit.operatorId,
+    previousRevision,
+    nextRevision,
+    productionState: nextProduction.status,
+    graphicType: nextProduction.graphicTakeState.graphicType,
+    result: createProductionMutationSummary(nextProduction),
+    metadata: audit.metadata
+  };
+  const auditResult = appendAuditLogEntry(runtimeState.auditLog, auditEntry);
+
+  if (!auditResult.ok) {
+    return auditResult.error;
+  }
+
+  runtimeState.production = nextProduction;
+  runtimeState.revision = nextRevision;
+  runtimeState.lastStateUpdateAt = audit.timestamp;
+
+  return null;
+}
+
+function applyProductionResult(
+  response: ServerResponse,
+  runtimeState: ServerRuntimeState,
+  result: ProductionEngineResult<ProductionRuntimeState>,
+  audit: {
+    event: string;
+    operatorId: string;
+    timestamp: string;
+    metadata?: JsonObject;
+  }
+): void {
+  if (!result.ok) {
+    sendProductionEngineError(response, result.error);
+    return;
+  }
+
+  const commitError = commitProductionMutation(runtimeState, result.value, audit);
+
+  if (commitError) {
+    sendError(response, commitError);
+    return;
+  }
+
+  sendJson(response, 200, apiSuccess(createProductionResponse(runtimeState)));
+}
+
 function getMutationTimestamp(body: Record<string, unknown>): string {
   if (process.env.NODE_ENV === "test" && hasNonEmptyString(body.now)) {
     return body.now.trim();
@@ -399,6 +571,74 @@ function createPayloadMetadata(body: Record<string, unknown>, extra: Record<stri
     reasonProvided: hasNonEmptyString(body.reason),
     overrideRequested: isRecord(body.override) && body.override.enabled === true
   });
+}
+
+function validatePublicProductionValue(value: unknown, path = "payload", depth = 0): AppError | null {
+  if (depth > 20) {
+    return {
+      code: "PRODUCTION_INVALID_PAYLOAD",
+      message: "Production payload is nested too deeply for safe broadcast state.",
+      httpStatus: 400,
+      details: { path }
+    };
+  }
+
+  if (value === null || typeof value === "number" || typeof value === "boolean") {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    return URL_SCHEME_PATTERN.test(value)
+      ? {
+          code: "PRODUCTION_INVALID_PAYLOAD",
+          message: "Production payload must not include remote or absolute URL-style references.",
+          httpStatus: 400,
+          details: { path }
+        }
+      : null;
+  }
+
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const error = validatePublicProductionValue(value[index], `${path}[${index}]`, depth + 1);
+
+      if (error) {
+        return error;
+      }
+    }
+
+    return null;
+  }
+
+  if (isRecord(value)) {
+    for (const [key, nestedValue] of Object.entries(value)) {
+      const nestedPath = `${path}.${key}`;
+
+      if (UNSAFE_PRODUCTION_PAYLOAD_KEY_PATTERN.test(key)) {
+        return {
+          code: "PRODUCTION_INVALID_PAYLOAD",
+          message: "Production payload contains a field name that is unsafe for public broadcast state.",
+          httpStatus: 400,
+          details: { path: nestedPath }
+        };
+      }
+
+      const error = validatePublicProductionValue(nestedValue, nestedPath, depth + 1);
+
+      if (error) {
+        return error;
+      }
+    }
+
+    return null;
+  }
+
+  return {
+    code: "PRODUCTION_INVALID_PAYLOAD",
+    message: "Production payload must be JSON-serializable.",
+    httpStatus: 400,
+    details: { path }
+  };
 }
 
 function getRequiredPayloadString(
@@ -879,6 +1119,422 @@ function handleDraftGet(
   notFound(response);
 }
 
+function hasOwnProperty(body: Record<string, unknown>, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(body, field);
+}
+
+function readNullableStringField(
+  body: Record<string, unknown>,
+  field: string,
+  errorCode: string
+): string | null | undefined | AppError {
+  if (!hasOwnProperty(body, field)) {
+    return undefined;
+  }
+
+  const value = body[field];
+
+  if (value === null) {
+    return null;
+  }
+
+  if (!hasNonEmptyString(value)) {
+    return {
+      code: errorCode,
+      message: `Production payload field ${field} must be a non-empty string or null when provided.`,
+      httpStatus: 400,
+      details: { field }
+    };
+  }
+
+  return value.trim();
+}
+
+function readOptionalGameNumber(body: Record<string, unknown>): number | null | undefined | AppError {
+  if (!hasOwnProperty(body, "activeGameNumber")) {
+    return undefined;
+  }
+
+  const value = body.activeGameNumber;
+
+  if (value === null) {
+    return null;
+  }
+
+  if (!Number.isInteger(value) || (value as number) < 1) {
+    return {
+      code: "PRODUCTION_INVALID_PAYLOAD",
+      message: "Production payload field activeGameNumber must be a positive integer or null when provided.",
+      httpStatus: 400,
+      details: { field: "activeGameNumber" }
+    };
+  }
+
+  return value as number;
+}
+
+function validateProductionReferences(
+  runtimeState: ServerRuntimeState,
+  fields: {
+    activeMatchId?: string | null;
+    activeGameNumber?: number | null;
+    activeDraftId?: string | null;
+  }
+): AppError | null {
+  const loadedPackage = getLoadedEventPackage(runtimeState);
+
+  if (!loadedPackage) {
+    return null;
+  }
+
+  const matchId =
+    fields.activeMatchId === undefined ? runtimeState.production.activeMatchId : fields.activeMatchId;
+  const gameNumber =
+    fields.activeGameNumber === undefined ? runtimeState.production.activeGameNumber : fields.activeGameNumber;
+
+  if (matchId) {
+    const match = loadedPackage.matches.find((item) => item.id === matchId);
+
+    if (!match) {
+      return {
+        code: "MATCH_NOT_FOUND",
+        message: "Active production match ID was not found in the loaded event package.",
+        httpStatus: 404,
+        details: { matchId }
+      };
+    }
+
+    if (gameNumber !== null && gameNumber !== undefined && !match.games.some((game) => game.gameNumber === gameNumber)) {
+      return {
+        code: "GAME_NOT_FOUND",
+        message: "Active production game number was not found for the selected match.",
+        httpStatus: 404,
+        details: { matchId, gameNumber }
+      };
+    }
+  }
+
+  if (fields.activeDraftId && !runtimeState.drafts.drafts[fields.activeDraftId]) {
+    return {
+      code: "DRAFT_NOT_FOUND",
+      message: "Active production draft ID was not found in the in-memory draft runtime.",
+      httpStatus: 404,
+      details: { draftId: fields.activeDraftId }
+    };
+  }
+
+  return null;
+}
+
+function handleProductionStatePost(
+  response: ServerResponse,
+  runtimeState: ServerRuntimeState,
+  payload: Record<string, unknown>,
+  operatorId: string,
+  timestamp: string
+): void {
+  if (!isProductionStatus(payload.status)) {
+    sendError(response, {
+      code: "PRODUCTION_INVALID_PAYLOAD",
+      message: "Production state payload requires a supported status.",
+      httpStatus: 400,
+      details: { field: "status" }
+    });
+    return;
+  }
+
+  if (
+    runtimeState.production.status !== payload.status &&
+    isLiveProductionStatus(runtimeState.production.status) &&
+    payload.confirm !== true
+  ) {
+    sendError(response, {
+      code: "PRODUCTION_CONFIRMATION_REQUIRED",
+      message: "Changing production state during a live production status requires confirm: true.",
+      httpStatus: 409,
+      details: {
+        currentStatus: runtimeState.production.status,
+        requestedStatus: payload.status
+      }
+    });
+    return;
+  }
+
+  const activeMatchId = readNullableStringField(payload, "activeMatchId", "PRODUCTION_INVALID_PAYLOAD");
+  const activeDraftId = readNullableStringField(payload, "activeDraftId", "PRODUCTION_INVALID_PAYLOAD");
+  const activeGameNumber = readOptionalGameNumber(payload);
+
+  for (const value of [activeMatchId, activeDraftId, activeGameNumber]) {
+    if (isAppError(value)) {
+      sendError(response, value);
+      return;
+    }
+  }
+
+  const referenceError = validateProductionReferences(runtimeState, {
+    activeMatchId: activeMatchId as string | null | undefined,
+    activeDraftId: activeDraftId as string | null | undefined,
+    activeGameNumber: activeGameNumber as number | null | undefined
+  });
+
+  if (referenceError) {
+    sendError(response, referenceError);
+    return;
+  }
+
+  applyProductionResult(
+    response,
+    runtimeState,
+    setProductionState(runtimeState.production, {
+      status: payload.status,
+      activeMatchId: activeMatchId as string | null | undefined,
+      activeGameNumber: activeGameNumber as number | null | undefined,
+      activeDraftId: activeDraftId as string | null | undefined,
+      confirmed: payload.confirm === true,
+      now: timestamp,
+      operatorId
+    }),
+    {
+      event: "PRODUCTION_STATE_CHANGED",
+      operatorId,
+      timestamp,
+      metadata: toAuditMetadata({
+        requestedStatus: payload.status,
+        activeMatchProvided: hasOwnProperty(payload, "activeMatchId"),
+        activeGameNumberProvided: hasOwnProperty(payload, "activeGameNumber"),
+        activeDraftProvided: hasOwnProperty(payload, "activeDraftId"),
+        confirmed: payload.confirm === true
+      })
+    }
+  );
+}
+
+function handleProductionPreviewPost(
+  response: ServerResponse,
+  runtimeState: ServerRuntimeState,
+  payload: Record<string, unknown>,
+  operatorId: string,
+  timestamp: string
+): void {
+  if (!isGraphicType(payload.graphicType)) {
+    sendError(response, {
+      code: "GRAPHICS_INVALID_TYPE",
+      message: "Production preview requires a supported graphicType.",
+      httpStatus: 400,
+      details: { field: "graphicType" }
+    });
+    return;
+  }
+
+  if (!hasOwnProperty(payload, "payload")) {
+    sendError(response, {
+      code: "GRAPHICS_INVALID_PAYLOAD",
+      message: "Production preview requires a payload field.",
+      httpStatus: 400,
+      details: { field: "payload" }
+    });
+    return;
+  }
+
+  const payloadError = validatePublicProductionValue(payload.payload);
+
+  if (payloadError) {
+    sendError(response, payloadError);
+    return;
+  }
+
+  applyProductionResult(
+    response,
+    runtimeState,
+    previewGraphic(runtimeState.production, {
+      graphicType: payload.graphicType,
+      payload: payload.payload as JsonValue,
+      now: timestamp,
+      operatorId
+    }),
+    {
+      event: "GRAPHICS_PREVIEWED",
+      operatorId,
+      timestamp,
+      metadata: toAuditMetadata({
+        graphicType: payload.graphicType,
+        payloadProvided: true
+      })
+    }
+  );
+}
+
+function handleProductionTakePost(
+  response: ServerResponse,
+  runtimeState: ServerRuntimeState,
+  payload: Record<string, unknown>,
+  operatorId: string,
+  timestamp: string
+): void {
+  applyProductionResult(
+    response,
+    runtimeState,
+    takeGraphic(runtimeState.production, {
+      confirmed: payload.confirm === true,
+      now: timestamp,
+      operatorId
+    }),
+    {
+      event: "GRAPHICS_TAKEN",
+      operatorId,
+      timestamp,
+      metadata: toAuditMetadata({
+        confirmed: payload.confirm === true
+      })
+    }
+  );
+}
+
+function handleProductionClearPost(
+  response: ServerResponse,
+  runtimeState: ServerRuntimeState,
+  payload: Record<string, unknown>,
+  operatorId: string,
+  timestamp: string
+): void {
+  applyProductionResult(
+    response,
+    runtimeState,
+    clearGraphic(runtimeState.production, {
+      confirmed: payload.confirm === true,
+      now: timestamp,
+      operatorId
+    }),
+    {
+      event: "GRAPHICS_CLEARED",
+      operatorId,
+      timestamp,
+      metadata: toAuditMetadata({
+        confirmed: payload.confirm === true
+      })
+    }
+  );
+}
+
+function handleProductionEmergencyPost(
+  response: ServerResponse,
+  runtimeState: ServerRuntimeState,
+  payload: Record<string, unknown>,
+  operatorId: string,
+  timestamp: string
+): void {
+  const message = hasNonEmptyString(payload.message) ? payload.message.trim() : undefined;
+
+  if (message) {
+    const messageError = validatePublicProductionValue(message, "message");
+
+    if (messageError) {
+      sendError(response, messageError);
+      return;
+    }
+  }
+
+  applyProductionResult(
+    response,
+    runtimeState,
+    enterEmergencyMode(runtimeState.production, {
+      confirmed: payload.confirm === true,
+      message,
+      now: timestamp,
+      operatorId
+    }),
+    {
+      event: "EMERGENCY_TRIGGERED",
+      operatorId,
+      timestamp,
+      metadata: toAuditMetadata({
+        confirmed: payload.confirm === true,
+        messageProvided: message !== undefined,
+        reasonProvided: hasNonEmptyString(payload.reason)
+      })
+    }
+  );
+}
+
+function handleProductionEmergencyClearPost(
+  response: ServerResponse,
+  runtimeState: ServerRuntimeState,
+  payload: Record<string, unknown>,
+  operatorId: string,
+  timestamp: string
+): void {
+  applyProductionResult(
+    response,
+    runtimeState,
+    clearEmergency(runtimeState.production, {
+      confirmed: payload.confirm === true,
+      now: timestamp,
+      operatorId
+    }),
+    {
+      event: "EMERGENCY_CLEARED",
+      operatorId,
+      timestamp,
+      metadata: toAuditMetadata({
+        confirmed: payload.confirm === true,
+        reasonProvided: hasNonEmptyString(payload.reason)
+      })
+    }
+  );
+}
+
+async function handleProductionPost(
+  request: IncomingMessage,
+  response: ServerResponse,
+  runtimeState: ServerRuntimeState,
+  pathParts: string[]
+): Promise<void> {
+  const body = await readJsonBody(request);
+  const bodyError = validateProductionRecordBody(body);
+
+  if (bodyError) {
+    sendError(response, bodyError);
+    return;
+  }
+
+  const payload = body as Record<string, unknown>;
+  const operatorId = sanitizeOperatorId(payload.operatorId);
+  const timestamp = getMutationTimestamp(payload);
+  const operation = pathParts[2];
+
+  if (operation === "state" && pathParts.length === 3) {
+    handleProductionStatePost(response, runtimeState, payload, operatorId, timestamp);
+    return;
+  }
+
+  if (operation === "preview" && pathParts.length === 3) {
+    handleProductionPreviewPost(response, runtimeState, payload, operatorId, timestamp);
+    return;
+  }
+
+  if (operation === "take" && pathParts.length === 3) {
+    handleProductionTakePost(response, runtimeState, payload, operatorId, timestamp);
+    return;
+  }
+
+  if ((operation === "clear" || operation === "clear-program") && pathParts.length === 3) {
+    handleProductionClearPost(response, runtimeState, payload, operatorId, timestamp);
+    return;
+  }
+
+  if (operation === "emergency" && pathParts.length === 3) {
+    handleProductionEmergencyPost(response, runtimeState, payload, operatorId, timestamp);
+    return;
+  }
+
+  if (operation === "emergency" && pathParts[3] === "clear" && pathParts.length === 4) {
+    handleProductionEmergencyClearPost(response, runtimeState, payload, operatorId, timestamp);
+    return;
+  }
+
+  notFound(response);
+}
+
 export async function handleApiRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -895,6 +1551,16 @@ export async function handleApiRequest(
     }
 
     await handleDraftPost(request, response, runtimeState, pathParts);
+    return;
+  }
+
+  if (request.method === "POST" && pathParts[0] === "api" && pathParts[1] === "production") {
+    if (!runtimeState.eventPackageLoadResult.ok) {
+      eventPackageNotLoaded(response, runtimeState);
+      return;
+    }
+
+    await handleProductionPost(request, response, runtimeState, pathParts);
     return;
   }
 
@@ -922,6 +1588,11 @@ export async function handleApiRequest(
 
   if (pathname === "/api/state") {
     sendJson(response, 200, apiSuccess(createStateSnapshot(runtimeState)));
+    return;
+  }
+
+  if (pathname === "/api/production" || pathname === "/api/production/state") {
+    sendJson(response, 200, apiSuccess(createProductionResponse(runtimeState)));
     return;
   }
 
