@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Player, Sponsor, Team } from "@mmbt/shared-types";
 
+import { createDashboardApiClient, type DashboardApiClient } from "./client/apiClient";
 import type {
   DashboardAdapterSummary,
   DashboardDraftSummary,
@@ -10,6 +11,7 @@ import type {
   DashboardRuntimeState,
   DashboardValidationWarning
 } from "./client/types";
+import { DraftOperatorPanel } from "./draft/DraftOperatorPanel";
 import type { DashboardClientState, DashboardSocketStatus } from "./state/dashboardState";
 import {
   createDashboardHealthSummary,
@@ -31,6 +33,7 @@ import { useDashboardState } from "./state/useDashboardState";
 
 export type AdminSectionId =
   | "overview"
+  | "draft"
   | "matches"
   | "teams"
   | "players"
@@ -40,6 +43,7 @@ export type AdminSectionId =
 
 const ADMIN_SECTIONS: Array<{ id: AdminSectionId; label: string; path: string }> = [
   { id: "overview", label: "Overview", path: "/admin" },
+  { id: "draft", label: "Draft Operator", path: "/draft" },
   { id: "matches", label: "Matches", path: "/admin/matches" },
   { id: "teams", label: "Teams", path: "/admin/teams" },
   { id: "players", label: "Players", path: "/admin/players" },
@@ -49,14 +53,16 @@ const ADMIN_SECTIONS: Array<{ id: AdminSectionId; label: string; path: string }>
 ];
 
 export function DashboardApp(): ReactNode {
-  const { state, refresh } = useDashboardState();
+  const apiClient = useMemo(() => createDashboardApiClient(), []);
+  const { state, refresh } = useDashboardState({ apiClient });
 
-  return <DashboardView state={state} onRefresh={() => void refresh()} />;
+  return <DashboardView state={state} onRefresh={() => void refresh()} apiClient={apiClient} />;
 }
 
 export interface DashboardViewProps {
   state: DashboardClientState;
   onRefresh(): void;
+  apiClient?: DashboardApiClient;
   initialSection?: AdminSectionId;
   initialSelectedMatchId?: string | null;
 }
@@ -67,9 +73,26 @@ function isBrowser(): boolean {
 
 export function getAdminSectionFromPath(pathname: string): AdminSectionId {
   const normalizedPath = pathname.replace(/\/+$/u, "") || "/admin";
+
+  if (normalizedPath === "/draft" || normalizedPath.startsWith("/draft/")) {
+    return "draft";
+  }
+
   const matchingSection = ADMIN_SECTIONS.find((section) => section.path === normalizedPath);
 
   return matchingSection?.id ?? "overview";
+}
+
+export function getDraftMatchIdFromPath(pathname: string): string | null {
+  const normalizedPath = pathname.replace(/\/+$/u, "");
+
+  if (!normalizedPath.startsWith("/draft/")) {
+    return null;
+  }
+
+  const matchId = normalizedPath.slice("/draft/".length).split("/")[0];
+
+  return matchId ? decodeURIComponent(matchId) : null;
 }
 
 function getPathForSection(sectionId: AdminSectionId): string {
@@ -927,11 +950,15 @@ function LoadingBanner(props: { state: DashboardClientState }): ReactNode {
 
 export function DashboardView(props: DashboardViewProps): ReactNode {
   const snapshot = props.state.snapshot;
+  const apiClient = useMemo(
+    () => props.apiClient ?? createDashboardApiClient(),
+    [props.apiClient]
+  );
   const [activeSection, setActiveSection] = useState<AdminSectionId>(() =>
     getInitialSection(props.initialSection)
   );
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(
-    props.initialSelectedMatchId ?? null
+    props.initialSelectedMatchId ?? (isBrowser() ? getDraftMatchIdFromPath(window.location.pathname) : null)
   );
   const selectedMatch = useMemo(
     () => getSelectedMatch(snapshot, selectedMatchId),
@@ -982,6 +1009,15 @@ export function DashboardView(props: DashboardViewProps): ReactNode {
             onSelectMatch={setSelectedMatchId}
           />
         );
+      case "draft":
+        return (
+          <DraftOperatorPanel
+            state={props.state}
+            apiClient={apiClient}
+            onRefresh={props.onRefresh}
+            routeMatchId={props.initialSelectedMatchId ?? (isBrowser() ? getDraftMatchIdFromPath(window.location.pathname) : null)}
+          />
+        );
       case "teams":
         return <TeamsPanel snapshot={snapshot} />;
       case "players":
@@ -1002,7 +1038,7 @@ export function DashboardView(props: DashboardViewProps): ReactNode {
       <header className="dashboard-header">
         <div>
           <p className="eyebrow">Multi-MOBA Broadcast Toolkit v0.1</p>
-          <h1>Admin Dashboard</h1>
+          <h1>{activeSection === "draft" ? "Draft Operator Panel" : "Admin Dashboard"}</h1>
         </div>
         <button className="refresh-button" type="button" onClick={props.onRefresh}>
           Refresh

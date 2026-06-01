@@ -48,6 +48,26 @@ function readRoute(options: DashboardSocketOptions): string {
   return typeof window === "undefined" ? "/admin" : window.location.pathname;
 }
 
+function readClientIdentity(route: string): {
+  role: "ADMIN" | "DRAFT_OPERATOR";
+  panel: "admin-dashboard" | "draft-operator";
+  capabilities: string[];
+} {
+  if (route === "/draft" || route.startsWith("/draft/")) {
+    return {
+      role: "DRAFT_OPERATOR",
+      panel: "draft-operator",
+      capabilities: ["read-only", "state:full", "draft:updated", "health:update"]
+    };
+  }
+
+  return {
+    role: "ADMIN",
+    panel: "admin-dashboard",
+    capabilities: ["read-only", "state:full", "health:update"]
+  };
+}
+
 function readErrorMessage(payload: unknown): string {
   if (
     typeof payload === "object" &&
@@ -80,13 +100,16 @@ export function connectDashboardSocket(
   }
 
   socket.on("connect", () => {
+    const route = readRoute(options);
+    const identity = readClientIdentity(route);
+
     handlers.onStatus("connected");
     socket.emit(SOCKET_EVENTS.CLIENT_HELLO, {
-      role: "ADMIN",
-      panel: "admin-dashboard",
-      route: readRoute(options),
+      role: identity.role,
+      panel: identity.panel,
+      route,
       version: "0.1",
-      capabilities: ["read-only", "state:full", "health:update"]
+      capabilities: identity.capabilities
     });
   });
 

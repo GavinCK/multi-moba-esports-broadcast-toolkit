@@ -1,4 +1,6 @@
 import type {
+  DraftRuleset,
+  DraftState,
   DraftPhaseDefinition,
   DraftTimerState,
   EventInfo,
@@ -7,6 +9,7 @@ import type {
   GameInstance,
   GraphicTakeStatus,
   GraphicType,
+  Hero,
   JsonValue,
   Match,
   Player,
@@ -55,6 +58,11 @@ export interface DashboardAdapterSummary {
   };
 }
 
+export interface DashboardAdapterDetail extends DashboardAdapterSummary {
+  heroes: Hero[];
+  rulesets: DraftRuleset[];
+}
+
 export interface DashboardValidationWarning {
   path: string;
   code: string;
@@ -87,6 +95,26 @@ export interface DashboardDraftSummary {
   bannedHeroIds: string[];
   pickedHeroIds: string[];
   updatedAt?: string;
+}
+
+export interface DashboardDraftSnapshot {
+  summary: DashboardDraftSummary;
+  draft: DraftState;
+}
+
+export interface DashboardDraftListResponse {
+  revision: number;
+  drafts: DashboardDraftSummary[];
+}
+
+export interface DashboardDraftDetailResponse {
+  revision: number;
+  draft: DashboardDraftSnapshot;
+}
+
+export interface DashboardDraftMutationResponse {
+  revision: number;
+  draft: DashboardDraftSnapshot;
 }
 
 export interface DashboardGraphicTakeState {

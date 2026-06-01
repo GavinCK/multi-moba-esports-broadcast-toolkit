@@ -2,7 +2,7 @@
   "name": "@mmbt/admin-dashboard",
   "version": "0.0.0",
   "private": true,
-  "description": "Read-only admin dashboard shell for the Multi-MOBA Esports Broadcast Toolkit.",
+  "description": "Admin dashboard and draft operator panel for the Multi-MOBA Esports Broadcast Toolkit.",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",

@@ -2,8 +2,14 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DashboardView, getAdminSectionFromPath } from "./App";
-import type { DashboardRuntimeState } from "./client/types";
+import { DashboardView, getAdminSectionFromPath, getDraftMatchIdFromPath } from "./App";
+import { DashboardApiError, type DashboardApiClient } from "./client/apiClient";
+import type {
+  DashboardAdapterDetail,
+  DashboardDraftMutationResponse,
+  DashboardDraftSnapshot,
+  DashboardRuntimeState
+} from "./client/types";
 import type { DashboardClientState } from "./state/dashboardState";
 import { initialDashboardState } from "./state/dashboardState";
 
@@ -60,9 +66,9 @@ function createSnapshot(): DashboardRuntimeState {
     validationWarnings: {
       eventPackage: [
         {
-          path: "metadata.apiKey",
+          path: "metadata.unsafeCredential",
           code: "UNSAFE_FIELD",
-          message: "apiKey super-secret-value must not be shown",
+          message: "unsafe credential sensitive-token-value must not be shown",
           severity: "warning" as const
         }
       ],
@@ -391,10 +397,241 @@ function createReadyState(): DashboardClientState {
   };
 }
 
+function createStateWithDraftStatus(status: "READY" | "LIVE" | "PAUSED" | "COMPLETE"): DashboardClientState {
+  const state = createReadyState();
+  const draft = state.snapshot?.drafts["draft_generic-001"];
+
+  if (state.snapshot && draft) {
+    state.snapshot.drafts["draft_generic-001"] = {
+      ...draft,
+      status,
+      timer: {
+        ...draft.timer,
+        isRunning: status === "LIVE"
+      }
+    };
+  }
+
+  return state;
+}
+
+function createDraftSnapshotFromState(state: DashboardClientState): DashboardDraftSnapshot {
+  const summary = state.snapshot?.drafts["draft_generic-001"];
+
+  if (!summary) {
+    throw new Error("Missing test draft summary.");
+  }
+
+  return {
+    summary,
+    draft: {
+      id: summary.id,
+      gameId: summary.gameId,
+      rulesetId: summary.rulesetId,
+      gameCode: summary.gameCode,
+      status: summary.status as "READY" | "LIVE" | "PAUSED" | "COMPLETE",
+      currentPhaseIndex: summary.currentPhaseIndex,
+      timer: summary.timer,
+      actions: [
+        {
+          id: "ban_1_1",
+          phaseId: "ban_1",
+          type: "BAN",
+          team: "BLUE",
+          slotIndex: 0,
+          heroId: null,
+          status: "PENDING",
+          createdAt: "2026-06-01T00:00:00.000Z"
+        },
+        {
+          id: "pick_1_1",
+          phaseId: "pick_1",
+          type: "PICK",
+          team: "RED",
+          slotIndex: 0,
+          heroId: "hero_beta",
+          status: "LOCKED",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          lockedAt: "2026-06-01T00:00:02.000Z"
+        }
+      ],
+      lockedHeroIds: ["hero_beta"],
+      bannedHeroIds: [],
+      pickedHeroIds: ["hero_beta"],
+      history: [
+        {
+          id: "history_001",
+          timestamp: "2026-06-01T00:00:02.000Z",
+          action: "HERO_LOCKED"
+        }
+      ],
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:02.000Z"
+    }
+  };
+}
+
+function createAdapterDetail(): DashboardAdapterDetail {
+  return {
+    gameCode: "generic-moba",
+    displayName: "Generic MOBA",
+    loaded: true,
+    heroCount: 2,
+    rulesetCount: 1,
+    source: "LOCAL_STATIC_SAMPLE",
+    capabilities: {
+      supportsManualDraft: true,
+      supportsClientReader: false,
+      supportsIngameHud: false,
+      supportsPostGameStats: false,
+      supportsAssetSync: false
+    },
+    heroes: [
+      {
+        id: "hero_alpha",
+        gameCode: "generic-moba",
+        displayName: "Alpha Sentinel",
+        roleTags: ["Frontline"]
+      },
+      {
+        id: "hero_beta",
+        gameCode: "generic-moba",
+        displayName: "Beta Mystic",
+        roleTags: ["Mage"]
+      }
+    ],
+    rulesets: [
+      {
+        id: "generic-standard",
+        gameCode: "generic-moba",
+        name: "Generic Standard",
+        allowDuplicateHeroes: false,
+        globalBanAcrossSeries: false,
+        globalPickAcrossSeries: false,
+        phases: [
+          {
+            id: "ban_1",
+            type: "BAN",
+            team: "BLUE",
+            count: 1,
+            timeSeconds: 30,
+            label: "Blue ban"
+          }
+        ]
+      }
+    ]
+  };
+}
+
+function createDraftApiClient(
+  state: DashboardClientState,
+  options: {
+    postError?: DashboardApiError;
+  } = {}
+): {
+  apiClient: DashboardApiClient;
+  postCalls: Array<{ path: string; body: Record<string, unknown> }>;
+} {
+  const postCalls: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const draftSnapshot = createDraftSnapshotFromState(state);
+  const mutationResponse: DashboardDraftMutationResponse = {
+    revision: (state.snapshot?.revision ?? 0) + 1,
+    draft: draftSnapshot
+  };
+  const apiClient: DashboardApiClient = {
+    async get<TData>(path: string): Promise<TData> {
+      if (path === "/api/drafts/draft_generic-001") {
+        return {
+          revision: state.snapshot?.revision ?? 0,
+          draft: draftSnapshot
+        } as TData;
+      }
+
+      if (path === "/api/adapters/generic-moba") {
+        return createAdapterDetail() as TData;
+      }
+
+      if (path === "/api/health") {
+        return state.health as TData;
+      }
+
+      if (path === "/api/state") {
+        return state.snapshot as TData;
+      }
+
+      throw new DashboardApiError({
+        code: "TEST_NOT_FOUND",
+        message: `Unhandled test GET ${path}`
+      });
+    },
+    async post<TData>(path: string, body: Record<string, unknown>): Promise<TData> {
+      postCalls.push({ path, body });
+
+      if (options.postError) {
+        throw options.postError;
+      }
+
+      return mutationResponse as TData;
+    },
+    async getHealth() {
+      return state.health ?? createSnapshot().health;
+    },
+    async getState() {
+      return state.snapshot ?? createSnapshot();
+    }
+  };
+
+  return { apiClient, postCalls };
+}
+
+async function flushAsync(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+function findButton(container: HTMLDivElement, label: string): HTMLButtonElement {
+  const button = Array.from(container.querySelectorAll("button")).find(
+    (item) => item.textContent?.trim() === label
+  );
+
+  if (!button) {
+    throw new Error(`Button not found: ${label}`);
+  }
+
+  return button;
+}
+
+function findDialogButton(container: HTMLDivElement, label: string): HTMLButtonElement {
+  const dialog = container.querySelector(".confirmation-dialog");
+  const button = Array.from(dialog?.querySelectorAll("button") ?? []).find(
+    (item) => item.textContent?.trim() === label
+  );
+
+  if (!button) {
+    throw new Error(`Dialog button not found: ${label}`);
+  }
+
+  return button;
+}
+
+function setInputValue(input: HTMLInputElement | undefined, value: string): void {
+  if (!input) {
+    throw new Error("Expected input to exist.");
+  }
+
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+
+  descriptor?.set?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function renderDashboard(
   state: DashboardClientState,
   options: {
     onRefresh?: () => void;
+    apiClient?: DashboardApiClient;
     initialSection?: Parameters<typeof DashboardView>[0]["initialSection"];
     initialSelectedMatchId?: string | null;
   } = {}
@@ -411,6 +648,7 @@ function renderDashboard(
       <DashboardView
         state={state}
         onRefresh={options.onRefresh ?? vi.fn()}
+        apiClient={options.apiClient}
         initialSection={options.initialSection}
         initialSelectedMatchId={options.initialSelectedMatchId}
       />
@@ -435,8 +673,11 @@ afterEach(() => {
 describe("DashboardView", () => {
   it("maps documented admin paths to local sections", () => {
     expect(getAdminSectionFromPath("/admin")).toBe("overview");
+    expect(getAdminSectionFromPath("/draft")).toBe("draft");
+    expect(getAdminSectionFromPath("/draft/match_grand-final")).toBe("draft");
     expect(getAdminSectionFromPath("/admin/matches")).toBe("matches");
     expect(getAdminSectionFromPath("/admin/system-health")).toBe("system-health");
+    expect(getDraftMatchIdFromPath("/draft/match_grand-final")).toBe("match_grand-final");
   });
 
   it("renders loading state", () => {
@@ -534,7 +775,7 @@ describe("DashboardView", () => {
     expect(text).toContain("UNSAFE_FIELD");
     expect(text).not.toContain("socket_raw_123");
     expect(text).not.toContain("production-log.jsonl");
-    expect(text).not.toContain("super-secret-value");
+    expect(text).not.toContain("sensitive-token-value");
     expect(text).not.toContain("private emergency reason");
   });
 
@@ -595,5 +836,235 @@ describe("DashboardView", () => {
 
     expect(buttonText).not.toMatch(/Start Draft|Lock|Undo|Redo|Reset Draft|Complete Draft|Take to Program|Clear Program|Trigger Emergency|Emergency Clear/u);
     expect(allText).not.toContain("/overlay/");
+  });
+
+  it("renders draft operator match, draft, current phase, current action, and entity list", async () => {
+    const readyState = createStateWithDraftStatus("LIVE");
+    const { apiClient } = createDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "draft"
+    });
+
+    await flushAsync();
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("Draft Operator");
+    expect(text).toContain("Grand Final");
+    expect(text).toContain("Game 1");
+    expect(text).toContain("Blue ban");
+    expect(text).toContain("Blue Ban 1");
+    expect(text).toContain("Alpha Sentinel");
+    expect(text).toContain("Beta Mystic");
+    expect(text).toContain("Ban Slots");
+    expect(text).toContain("Pick Slots");
+  });
+
+  it("lets the operator select an entity and hover only after a manual click", async () => {
+    const readyState = createStateWithDraftStatus("LIVE");
+    const { apiClient, postCalls } = createDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "draft"
+    });
+
+    await flushAsync();
+    expect(postCalls).toHaveLength(0);
+
+    act(() => {
+      findButton(container, "Alpha SentinelFrontline").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {
+      findButton(container, "Hover Selected").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(postCalls).toHaveLength(1);
+    expect(postCalls[0]).toMatchObject({
+      path: "/api/drafts/draft_generic-001/actions/ban_1_1/hover",
+      body: {
+        heroId: "hero_alpha",
+        operatorId: "draft-operator"
+      }
+    });
+  });
+
+  it("confirmation-gates lock before calling the REST lock endpoint", async () => {
+    const readyState = createStateWithDraftStatus("LIVE");
+    const { apiClient, postCalls } = createDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "draft"
+    });
+
+    await flushAsync();
+
+    act(() => {
+      findButton(container, "Alpha SentinelFrontline").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    act(() => {
+      findButton(container, "Lock Selected").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("Lock Hero");
+    expect(postCalls).toHaveLength(0);
+
+    await act(async () => {
+      findDialogButton(container, "Lock Hero").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(postCalls).toHaveLength(1);
+    expect(postCalls[0]).toMatchObject({
+      path: "/api/drafts/draft_generic-001/actions/ban_1_1/lock",
+      body: {
+        heroId: "hero_alpha",
+        confirm: true
+      }
+    });
+  });
+
+  it("calls pause and resume only after manual clicks", async () => {
+    const liveState = createStateWithDraftStatus("LIVE");
+    const runningDraftClient = createDraftApiClient(liveState);
+    const liveContainer = renderDashboard(liveState, {
+      apiClient: runningDraftClient.apiClient,
+      initialSection: "draft"
+    });
+
+    await flushAsync();
+    await act(async () => {
+      findButton(liveContainer, "Pause Draft").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(runningDraftClient.postCalls).toHaveLength(1);
+    expect(runningDraftClient.postCalls[0]?.path).toBe("/api/drafts/draft_generic-001/pause");
+
+    act(() => {
+      mountedRoot?.unmount();
+    });
+    mountedContainer?.remove();
+    mountedRoot = null;
+    mountedContainer = null;
+
+    const pausedState = createStateWithDraftStatus("PAUSED");
+    const pausedClient = createDraftApiClient(pausedState);
+    const pausedContainer = renderDashboard(pausedState, {
+      apiClient: pausedClient.apiClient,
+      initialSection: "draft"
+    });
+
+    await flushAsync();
+    await act(async () => {
+      findButton(pausedContainer, "Resume Draft").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(pausedClient.postCalls).toHaveLength(1);
+    expect(pausedClient.postCalls[0]?.path).toBe("/api/drafts/draft_generic-001/resume");
+  });
+
+  it("confirmation-gates undo, redo, reset, and complete draft controls", async () => {
+    const readyState = createStateWithDraftStatus("LIVE");
+    const { apiClient, postCalls } = createDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "draft"
+    });
+
+    await flushAsync();
+
+    act(() => {
+      findButton(container, "Undo").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(postCalls).toHaveLength(0);
+    act(() => {
+      setInputValue(container.querySelector<HTMLInputElement>(".confirmation-dialog input") ?? undefined, "Referee correction");
+    });
+    await act(async () => {
+      findDialogButton(container, "Undo").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(postCalls[0]?.path).toBe("/api/drafts/draft_generic-001/undo");
+
+    act(() => {
+      findButton(container, "Redo").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(postCalls).toHaveLength(1);
+    act(() => {
+      setInputValue(container.querySelector<HTMLInputElement>(".confirmation-dialog input") ?? undefined, "Operator correction");
+    });
+    await act(async () => {
+      findDialogButton(container, "Redo").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(postCalls[1]?.path).toBe("/api/drafts/draft_generic-001/redo");
+
+    act(() => {
+      findButton(container, "Reset Draft").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(postCalls).toHaveLength(2);
+    const resetInputs = container.querySelectorAll<HTMLInputElement>(".confirmation-dialog input");
+    act(() => {
+      setInputValue(resetInputs[0], "Wrong setup");
+      setInputValue(resetInputs[1], "RESET_DRAFT");
+    });
+    await act(async () => {
+      findDialogButton(container, "Reset Draft").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(postCalls[2]?.path).toBe("/api/drafts/draft_generic-001/reset");
+    expect(postCalls[2]?.body).toMatchObject({
+      confirm: true,
+      confirmationText: "RESET_DRAFT"
+    });
+
+    act(() => {
+      findButton(container, "Complete Draft").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(postCalls).toHaveLength(3);
+    await act(async () => {
+      findDialogButton(container, "Complete Draft").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(postCalls[3]?.path).toBe("/api/drafts/draft_generic-001/complete");
+    expect(postCalls[3]?.body).toMatchObject({ confirm: true });
+  });
+
+  it("shows structured API errors safely", async () => {
+    const readyState = createStateWithDraftStatus("LIVE");
+    const { apiClient } = createDraftApiClient(readyState, {
+      postError: new DashboardApiError({
+        code: "DRAFT_DUPLICATE_HERO",
+        message: "Hero has already been locked."
+      })
+    });
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "draft"
+    });
+
+    await flushAsync();
+    act(() => {
+      findButton(container, "Alpha SentinelFrontline").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {
+      findButton(container, "Hover Selected").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("DRAFT_DUPLICATE_HERO");
+    expect(container.textContent).toContain("Hero has already been locked.");
+    expect(container.textContent).not.toContain("production-log.jsonl");
+    expect(container.textContent).not.toContain("socket_raw_123");
+  });
+
+  it("keeps draft operator UI scoped away from production controls and overlay routes", async () => {
+    const readyState = createStateWithDraftStatus("LIVE");
+    const { apiClient } = createDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "draft"
+    });
+
+    await flushAsync();
+    const text = container.textContent ?? "";
+
+    expect(text).not.toMatch(/Take to Program|Clear Program|Trigger Emergency|Emergency Clear/u);
+    expect(text).not.toContain("/overlay/");
+    expect(text).not.toContain("private emergency reason");
+    expect(text).not.toContain("sensitive-token-value");
   });
 });

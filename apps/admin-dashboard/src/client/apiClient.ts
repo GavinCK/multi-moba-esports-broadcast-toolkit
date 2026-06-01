@@ -59,6 +59,7 @@ async function readResponseJson(response: Response): Promise<unknown> {
 
 export interface DashboardApiClient {
   get<TData>(path: string): Promise<TData>;
+  post<TData>(path: string, body: Record<string, unknown>): Promise<TData>;
   getHealth(): Promise<DashboardHealthResponse>;
   getState(): Promise<DashboardRuntimeState>;
 }
@@ -68,12 +69,11 @@ export function createDashboardApiClient(
 ): DashboardApiClient {
   const fetchFn = options.fetchFn ?? fetch;
 
-  async function get<TData>(path: string): Promise<TData> {
-    const response = await fetchFn(createUrl(options.baseUrl, path), {
-      headers: {
-        Accept: "application/json"
-      }
-    });
+  async function request<TData>(
+    path: string,
+    init: RequestInit
+  ): Promise<TData> {
+    const response = await fetchFn(createUrl(options.baseUrl, path), init);
     const body = await readResponseJson(response);
 
     if (!isApiResponse(body)) {
@@ -97,12 +97,36 @@ export function createDashboardApiClient(
   }
 
   return {
-    get,
+    get(path) {
+      return request(path, {
+        headers: {
+          Accept: "application/json"
+        }
+      });
+    },
+    post(path, body) {
+      return request(path, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
+    },
     getHealth() {
-      return get<DashboardHealthResponse>("/api/health");
+      return request<DashboardHealthResponse>("/api/health", {
+        headers: {
+          Accept: "application/json"
+        }
+      });
     },
     getState() {
-      return get<DashboardRuntimeState>("/api/state");
+      return request<DashboardRuntimeState>("/api/state", {
+        headers: {
+          Accept: "application/json"
+        }
+      });
     }
   };
 }
