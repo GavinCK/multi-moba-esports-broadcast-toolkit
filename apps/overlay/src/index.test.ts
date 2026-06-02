@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
-import * as workspaceExports from "./index";
 
-describe("workspace baseline", () => {
-  it("keeps a skeleton marker export available", () => {
-    const hasSkeletonMarker = Object.values(workspaceExports).some((value) => {
-      const marker = value as { status?: unknown };
+import { overlayWorkspace } from "./index";
 
-      return marker.status === "skeleton";
-    });
-
-    expect(hasSkeletonMarker).toBe(true);
+describe("overlay workspace metadata", () => {
+  it("declares TQ-090 route shell coverage as read-only", () => {
+    expect(overlayWorkspace.status).toBe("overlay-shell");
+    expect(overlayWorkspace.readOnlyBroadcastOutput).toBe(true);
+    expect(overlayWorkspace.routes).toEqual([
+      "/overlay/program",
+      "/overlay/preview",
+      "/overlay/draft/:matchId",
+      "/overlay/scorebug/:matchId",
+      "/overlay/emergency"
+    ]);
   });
 });

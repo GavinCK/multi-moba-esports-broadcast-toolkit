@@ -6,7 +6,7 @@ The architecture is intentionally game-agnostic at the core. Universal Ban/Pick 
 
 ## Current Status
 
-This repository now contains the early v0.1 foundation for the local server runtime, sample event package loading, Socket.IO realtime sync, and the first read-only Admin Dashboard app shell.
+This repository now contains the early v0.1 foundation for the local server runtime, sample event package loading, Socket.IO realtime sync, the role-focused Admin Dashboard app, and the first browser-source overlay shell.
 
 Implemented so far:
 
@@ -15,12 +15,15 @@ Implemented so far:
 - Local sample event package with Generic MOBA, LoL sample, AOV sample, and HoK sample adapter data.
 - Node server with local event package loading, health/state/adapters/draft/production REST APIs, append-only JSONL audit logging for accepted mutations, and read-only Socket.IO state sync.
 - React + TypeScript + Vite Admin Dashboard with admin, draft operator, producer, and caster/read-only panels.
+- React + TypeScript + Vite Overlay app shell with read-only Socket.IO sync, required overlay routes, and `?debug=1` diagnostics.
 - Root lint, typecheck, test, build, and verify scripts.
 - Root `verify` script that runs lint, typecheck, test, and build.
 
 Not implemented yet:
 
-- Overlay routes.
+- Full Draft Overlay visual slot rendering.
+- Full Score Bug visual rendering.
+- Full Program / Preview / Emergency graphic rendering beyond shell/standby behavior.
 - OBS/vMix integration.
 - Cloud sync, database persistence, login, official game-client sync, or player-side automation.
 
@@ -87,6 +90,27 @@ Implemented dashboard role routes include:
 /caster
 /caster/:matchId
 ```
+
+For local overlay development, start the server and overlay app in separate terminals:
+
+```bash
+pnpm --filter @mmbt/server dev
+pnpm --filter @mmbt/overlay dev
+```
+
+The Overlay app runs as a Vite app at `http://127.0.0.1:5174` by default and proxies `/api` plus `/socket.io` to the local server at `http://127.0.0.1:3000`. Set `MMBT_SERVER_URL` before starting the overlay app if the server is on another local port.
+
+Implemented overlay shell routes include:
+
+```text
+/overlay/program
+/overlay/preview
+/overlay/draft/:matchId
+/overlay/scorebug/:matchId
+/overlay/emergency
+```
+
+Add `?debug=1` to an overlay route to show public-safe diagnostics such as route, match ID, realtime status, server status, revision, and last update timestamp.
 
 ## v0.1 Guardrails
 
