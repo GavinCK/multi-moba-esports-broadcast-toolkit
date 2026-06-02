@@ -49,6 +49,7 @@ docs
 
 - [Local LAN deployment and browser source guide](docs/deployment-guide.md)
 - [Operator guide](docs/operator-guide.md)
+- [Game adapter developer guide](docs/game-adapter-guide.md)
 
 ## Commands
 
