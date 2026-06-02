@@ -202,6 +202,20 @@ function getServerTone(status: DashboardHealthResponse["status"] | "UNKNOWN"): "
   }
 }
 
+const LOCAL_PATH_PATTERN = /(?:[A-Za-z]:\\|[/\\]Users[/\\]|\/home\/)/u;
+
+function formatSafeHealthDetail(value: string | null | undefined, fallback = "Not reported"): string {
+  if (!value) {
+    return fallback;
+  }
+
+  return LOCAL_PATH_PATTERN.test(value) ? "[redacted-local-path]" : value;
+}
+
+function formatList(values: string[] | undefined): string {
+  return values && values.length > 0 ? values.join(", ") : "Not reported";
+}
+
 function DashboardNav(props: {
   activeSection: AdminSectionId;
   onSectionChange(sectionId: AdminSectionId): void;
@@ -477,6 +491,64 @@ function ProductionSummary(props: { snapshot: DashboardRuntimeState | null }): R
           value={production?.overlaySafety.readOnly ? "Read-only" : "Check required"}
         />
       </dl>
+    </Section>
+  );
+}
+
+type HealthConnectionStatusMap = NonNullable<DashboardHealthResponse["connectionStatus"]>;
+type HealthConnectionStatusKey = keyof HealthConnectionStatusMap;
+
+const HEALTH_CONNECTION_ROWS: Array<{ key: HealthConnectionStatusKey; label: string }> = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "overlay", label: "Overlay" },
+  { key: "draftOperator", label: "Draft operator" },
+  { key: "producer", label: "Producer" },
+  { key: "caster", label: "Caster" }
+];
+
+function getConnectionTone(connected: boolean | undefined): "good" | "neutral" {
+  return connected ? "good" : "neutral";
+}
+
+function ConnectionStatusTable(props: { health: DashboardHealthResponse | null }): ReactNode {
+  return (
+    <Section title="Connection Status">
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Client type</th>
+              <th>Status</th>
+              <th>Count</th>
+              <th>Panels</th>
+              <th>Routes</th>
+              <th>Match IDs</th>
+              <th>Last seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {HEALTH_CONNECTION_ROWS.map((row) => {
+              const status = props.health?.connectionStatus?.[row.key];
+
+              return (
+                <tr key={row.key}>
+                  <td>{row.label}</td>
+                  <td>
+                    <StatusPill tone={getConnectionTone(status?.connected)}>
+                      {status?.connected ? "Connected" : "Not reported"}
+                    </StatusPill>
+                  </td>
+                  <td>{status?.count ?? 0}</td>
+                  <td>{formatList(status?.panels)}</td>
+                  <td>{formatList(status?.routes)}</td>
+                  <td>{formatList(status?.matchIds)}</td>
+                  <td>{formatDateTime(status?.lastSeenAt)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </Section>
   );
 }
@@ -828,6 +900,9 @@ function SystemHealthPanel(props: { state: DashboardClientState }): ReactNode {
   const adapterStatuses = Object.entries(health?.adapterStatus ?? {});
   const eventWarnings = health?.validationWarnings?.eventPackage ?? [];
   const adapterWarnings = health?.validationWarnings?.adapters ?? [];
+  const clientGroups = health?.clientGroups ?? [];
+  const assetWarningCount = health?.assetStatus.warnings.length ?? 0;
+  const missingAssetCount = health?.assetStatus.missingAssets.length ?? 0;
 
   return (
     <div className="stack">
@@ -843,8 +918,12 @@ function SystemHealthPanel(props: { state: DashboardClientState }): ReactNode {
             value={<StatusPill tone={getSocketTone(summary.socketStatus)}>{summary.socketStatus}</StatusPill>}
           />
           <Metric label="Loaded package" value={summary.loadedEventPackageId} />
-          <Metric label="Runtime revision" value={summary.revision ?? "Not reported"} />
+          <Metric label="Server started" value={formatDateTime(health?.serverStartedAt)} />
+          <Metric label="Current time" value={formatDateTime(health?.now)} />
+          <Metric label="Uptime" value={formatDuration(health?.uptimeSeconds)} />
+          <Metric label="State revision" value={summary.revision ?? "Not reported"} />
           <Metric label="Production state" value={summary.productionState} />
+          <Metric label="Last state update" value={formatDateTime(health?.lastStateUpdateAt)} />
           <Metric
             label="Emergency"
             value={
@@ -853,9 +932,11 @@ function SystemHealthPanel(props: { state: DashboardClientState }): ReactNode {
               </StatusPill>
             }
           />
-          <Metric label="Last snapshot" value={formatDateTime(summary.latestSnapshotAt)} />
+          <Metric label="Emergency triggered" value={formatDateTime(health?.emergencyStatus?.triggeredAt)} />
+          <Metric label="Emergency cleared" value={formatDateTime(health?.emergencyStatus?.clearedAt)} />
           <Metric label="API source" value="Same-origin /api" />
-          <Metric label="Missing assets" value={summary.missingAssetCount} />
+          <Metric label="Missing assets" value={missingAssetCount} />
+          <Metric label="Asset warnings" value={assetWarningCount} />
           <Metric label="Health warnings" value={summary.healthWarningCount} />
           <Metric
             label="Audit logging"
@@ -867,18 +948,65 @@ function SystemHealthPanel(props: { state: DashboardClientState }): ReactNode {
               )
             }
           />
+          <Metric label="Audit path" value={formatSafeHealthDetail(health?.auditLogStatus?.path)} />
+          <Metric label="Audit last write" value={formatDateTime(health?.auditLogStatus?.lastWriteAt)} />
         </dl>
+        {health?.status === "ERROR" ? (
+          <p className="inline-error">Health status is ERROR. Review the warning and error details before show.</p>
+        ) : null}
+        {summary.healthWarningCount > 0 ? (
+          <p className="inline-warning">
+            {summary.healthWarningCount} health warning(s) or error(s) reported.
+          </p>
+        ) : null}
         {health?.auditLogStatus?.error ? (
-          <p className="inline-warning">Audit log writer reports an error. Check the server console before show.</p>
+          <p className="inline-error">
+            Audit log writer error: {formatSafeHealthDetail(health.auditLogStatus.error)}
+          </p>
         ) : null}
       </Section>
+
+      <ConnectionStatusTable health={health} />
 
       <Section title="Client Presence">
         <dl className="metric-grid">
           <Metric label="Connected clients" value={summary.connectedClientCount} />
           <Metric label="Reported groups" value={summary.connectedClientGroups.length} />
+          <Metric label="Read-only clients" value={health?.clientSummary?.readOnlyCount ?? "Not reported"} />
+          <Metric label="Last client seen" value={formatDateTime(health?.clientSummary?.lastSeenAt)} />
         </dl>
-        {summary.connectedClientGroups.length === 0 ? (
+        {clientGroups.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Role / panel</th>
+                  <th>Count</th>
+                  <th>Read-only</th>
+                  <th>Route</th>
+                  <th>Match ID</th>
+                  <th>Last seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientGroups.map((group) => (
+                  <tr
+                    key={`${group.category}-${group.role ?? "role"}-${group.panel ?? "panel"}-${group.route ?? "route"}-${group.matchId ?? "match"}`}
+                  >
+                    <td>{group.category}</td>
+                    <td>{`${group.role ?? "not reported"} / ${group.panel ?? "unknown panel"}`}</td>
+                    <td>{group.count}</td>
+                    <td>{group.readOnlyCount}</td>
+                    <td>{group.route ?? "Not reported"}</td>
+                    <td>{group.matchId ?? "Not reported"}</td>
+                    <td>{formatDateTime(group.lastSeenAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : summary.connectedClientGroups.length === 0 ? (
           <p className="empty-state">No client roles or panels have reported yet.</p>
         ) : (
           <ul className="detail-list">
@@ -908,6 +1036,7 @@ function SystemHealthPanel(props: { state: DashboardClientState }): ReactNode {
                   <th>Status</th>
                   <th>Heroes</th>
                   <th>Rulesets</th>
+                  <th>Error</th>
                 </tr>
               </thead>
               <tbody>
@@ -921,6 +1050,7 @@ function SystemHealthPanel(props: { state: DashboardClientState }): ReactNode {
                     </td>
                     <td>{adapter.heroCount}</td>
                     <td>{adapter.rulesetCount ?? "Not reported"}</td>
+                    <td>{adapter.error ? formatSafeHealthDetail(adapter.error, "No error") : "No error"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -938,6 +1068,18 @@ function SystemHealthPanel(props: { state: DashboardClientState }): ReactNode {
           <article className="summary-card">
             <h3>Adapters</h3>
             <WarningCodeList warnings={adapterWarnings} emptyLabel="No adapter warnings reported." />
+          </article>
+          <article className="summary-card">
+            <h3>Assets</h3>
+            <dl className="compact-list">
+              <Metric label="Missing" value={missingAssetCount} />
+              <Metric label="Warnings" value={assetWarningCount} />
+            </dl>
+            {missingAssetCount > 0 || assetWarningCount > 0 ? (
+              <p className="inline-warning">Asset health requires review before show.</p>
+            ) : (
+              <p className="empty-state">No asset warnings reported.</p>
+            )}
           </article>
         </div>
       </Section>

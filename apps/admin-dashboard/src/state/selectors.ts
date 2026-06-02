@@ -274,11 +274,13 @@ export function createDashboardHealthSummary(input: {
 }): DashboardHealthSummary {
   const health = input.health ?? input.snapshot?.health ?? null;
   const socketClients = health?.socketClients ?? [];
-  const connectedClientGroups = Array.from(
-    new Set(
-      socketClients.map((client) => `${client.role ?? "VIEWER"} / ${client.panel ?? "unknown panel"}`)
-    )
-  ).sort();
+  const connectedClientGroups = health?.clientGroups
+    ? health.clientGroups.map((group) => `${group.role ?? group.category} / ${group.panel ?? "unknown panel"}`)
+    : Array.from(
+        new Set(
+          socketClients.map((client) => `${client.role ?? "VIEWER"} / ${client.panel ?? "unknown panel"}`)
+        )
+      ).sort();
   const adapterEntries = Object.values(health?.adapterStatus ?? {});
 
   return {
@@ -286,16 +288,20 @@ export function createDashboardHealthSummary(input: {
     restStatus: input.loadStatus,
     socketStatus: input.socketStatus,
     loadedEventPackageId: health?.loadedEventPackageId ?? input.snapshot?.eventPackageId ?? "Not loaded",
-    revision: input.snapshot?.revision ?? null,
+    revision: health?.stateRevision ?? input.snapshot?.revision ?? null,
     productionState: health?.currentProductionState ?? input.snapshot?.production.status ?? "Unknown",
-    emergencyStatus: input.snapshot
+    emergencyStatus: health?.emergencyStatus
+      ? health.emergencyStatus.active
+        ? "ACTIVE"
+        : "READY"
+      : input.snapshot
       ? input.snapshot.production.emergency.active
         ? "ACTIVE"
         : "READY"
       : health?.emergencyReady
         ? "READY"
         : "UNKNOWN",
-    connectedClientCount: socketClients.length,
+    connectedClientCount: health?.clientSummary?.total ?? socketClients.length,
     connectedClientGroups,
     loadedAdapterCount: adapterEntries.filter((adapter) => adapter.loaded).length,
     knownAdapterCount: adapterEntries.length,
@@ -304,8 +310,8 @@ export function createDashboardHealthSummary(input: {
       (health?.assetStatus.warnings.length ?? 0) +
       (health?.validationWarnings?.eventPackage.length ?? 0) +
       (health?.validationWarnings?.adapters.length ?? 0) +
-      (health?.auditLogStatus?.error ? 1 : 0),
-    latestSnapshotAt: input.snapshot?.timestamp ?? health?.lastStateUpdateAt ?? null
+      (health?.auditLogStatus && !health.auditLogStatus.writable ? 1 : 0),
+    latestSnapshotAt: health?.lastStateUpdateAt ?? input.snapshot?.timestamp ?? null
   };
 }
 

@@ -16,6 +16,7 @@ function createSnapshot(): DashboardRuntimeState {
     serverStartedAt: "2026-06-01T00:00:00.000Z",
     now: "2026-06-01T00:00:05.000Z",
     uptimeSeconds: 5,
+    stateRevision: 12,
     socketClients: [
       {
         id: "socket_hidden_id",
@@ -25,6 +26,98 @@ function createSnapshot(): DashboardRuntimeState {
         lastSeenAt: "2026-06-01T00:00:05.000Z"
       }
     ],
+    clientSummary: {
+      total: 2,
+      readOnlyCount: 1,
+      byRole: {
+        ADMIN: 1,
+        OVERLAY: 1
+      },
+      byPanel: {
+        "admin-dashboard": 1,
+        "overlay-shell": 1
+      },
+      byClientType: {
+        "not-reported": 1,
+        overlay: 1
+      },
+      lastSeenAt: "2026-06-01T00:00:05.000Z"
+    },
+    clientGroups: [
+      {
+        category: "dashboard" as const,
+        role: "ADMIN",
+        panel: "admin-dashboard",
+        route: "/admin/system-health",
+        count: 1,
+        readOnlyCount: 0,
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      {
+        category: "overlay" as const,
+        role: "OVERLAY",
+        panel: "overlay-shell",
+        clientType: "overlay",
+        route: "/overlay/program",
+        count: 1,
+        readOnlyCount: 1,
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      }
+    ],
+    connectionStatus: {
+      dashboard: {
+        category: "dashboard" as const,
+        connected: true,
+        state: "connected" as const,
+        count: 1,
+        panels: ["admin-dashboard"],
+        roles: ["ADMIN"],
+        routes: ["/admin/system-health"],
+        matchIds: [],
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      overlay: {
+        category: "overlay" as const,
+        connected: true,
+        state: "connected" as const,
+        count: 1,
+        panels: ["overlay-shell"],
+        roles: ["OVERLAY"],
+        routes: ["/overlay/program"],
+        matchIds: [],
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      draftOperator: {
+        category: "draft-operator" as const,
+        connected: false,
+        state: "not-reported" as const,
+        count: 0,
+        panels: [],
+        roles: [],
+        routes: [],
+        matchIds: []
+      },
+      producer: {
+        category: "producer" as const,
+        connected: false,
+        state: "not-reported" as const,
+        count: 0,
+        panels: [],
+        roles: [],
+        routes: [],
+        matchIds: []
+      },
+      caster: {
+        category: "caster" as const,
+        connected: false,
+        state: "not-reported" as const,
+        count: 0,
+        panels: [],
+        roles: [],
+        routes: [],
+        matchIds: []
+      }
+    },
     loadedEventPackageId: "sample-event",
     currentProductionState: "DRAFT_READY" as const,
     adapterStatus: {
@@ -40,6 +133,10 @@ function createSnapshot(): DashboardRuntimeState {
       warnings: ["missing local optional asset"]
     },
     emergencyReady: true,
+    emergencyStatus: {
+      ready: true,
+      active: false
+    },
     lastStateUpdateAt: "2026-06-01T00:00:05.000Z",
     validationWarnings: {
       eventPackage: [],
@@ -274,9 +371,9 @@ describe("dashboard selectors", () => {
     });
 
     expect(summary.loadedEventPackageId).toBe("sample-event");
-    expect(summary.revision).toBe(11);
-    expect(summary.connectedClientCount).toBe(1);
-    expect(summary.connectedClientGroups).toEqual(["ADMIN / admin-dashboard"]);
+    expect(summary.revision).toBe(12);
+    expect(summary.connectedClientCount).toBe(2);
+    expect(summary.connectedClientGroups).toEqual(["ADMIN / admin-dashboard", "OVERLAY / overlay-shell"]);
     expect(summary.connectedClientGroups.join(" ")).not.toContain("socket_hidden_id");
     expect(summary.missingAssetCount).toBe(1);
     expect(summary.healthWarningCount).toBe(1);

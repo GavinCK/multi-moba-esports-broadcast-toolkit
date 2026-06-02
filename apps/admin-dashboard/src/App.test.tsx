@@ -34,6 +34,7 @@ function createSnapshot(): DashboardRuntimeState {
     serverStartedAt: "2026-06-01T00:00:00.000Z",
     now: "2026-06-01T00:00:05.000Z",
     uptimeSeconds: 5,
+    stateRevision: 3,
     socketClients: [
       {
         id: "socket_raw_123",
@@ -41,8 +42,165 @@ function createSnapshot(): DashboardRuntimeState {
         panel: "admin-dashboard",
         connectedAt: "2026-06-01T00:00:01.000Z",
         lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      {
+        id: "socket_raw_overlay",
+        panel: "overlay-shell",
+        connectedAt: "2026-06-01T00:00:02.000Z",
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      {
+        id: "socket_raw_draft",
+        role: "DRAFT_OPERATOR" as const,
+        panel: "draft-operator",
+        connectedAt: "2026-06-01T00:00:03.000Z",
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      {
+        id: "socket_raw_producer",
+        role: "PRODUCER" as const,
+        panel: "producer-panel",
+        connectedAt: "2026-06-01T00:00:04.000Z",
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      {
+        id: "socket_raw_caster",
+        role: "CASTER" as const,
+        panel: "caster-panel",
+        connectedAt: "2026-06-01T00:00:04.500Z",
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
       }
     ],
+    clientSummary: {
+      total: 5,
+      readOnlyCount: 1,
+      byRole: {
+        ADMIN: 1,
+        DRAFT_OPERATOR: 1,
+        PRODUCER: 1,
+        CASTER: 1
+      },
+      byPanel: {
+        "admin-dashboard": 1,
+        "overlay-shell": 1,
+        "draft-operator": 1,
+        "producer-panel": 1,
+        "caster-panel": 1
+      },
+      byClientType: {
+        "not-reported": 4,
+        overlay: 1
+      },
+      lastSeenAt: "2026-06-01T00:00:05.000Z"
+    },
+    clientGroups: [
+      {
+        category: "dashboard" as const,
+        role: "ADMIN",
+        panel: "admin-dashboard",
+        route: "/admin/system-health",
+        count: 1,
+        readOnlyCount: 0,
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      {
+        category: "overlay" as const,
+        role: "OVERLAY",
+        panel: "overlay-shell",
+        clientType: "overlay",
+        route: "/overlay/program",
+        count: 1,
+        readOnlyCount: 1,
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      {
+        category: "draft-operator" as const,
+        role: "DRAFT_OPERATOR",
+        panel: "draft-operator",
+        route: "/draft/match_grand-final",
+        matchId: "match_grand-final",
+        count: 1,
+        readOnlyCount: 0,
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      {
+        category: "producer" as const,
+        role: "PRODUCER",
+        panel: "producer-panel",
+        route: "/producer/match_grand-final",
+        matchId: "match_grand-final",
+        count: 1,
+        readOnlyCount: 0,
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      {
+        category: "caster" as const,
+        role: "CASTER",
+        panel: "caster-panel",
+        route: "/caster/match_grand-final",
+        matchId: "match_grand-final",
+        count: 1,
+        readOnlyCount: 0,
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      }
+    ],
+    connectionStatus: {
+      dashboard: {
+        category: "dashboard" as const,
+        connected: true,
+        state: "connected" as const,
+        count: 1,
+        panels: ["admin-dashboard"],
+        roles: ["ADMIN"],
+        routes: ["/admin/system-health"],
+        matchIds: [],
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      overlay: {
+        category: "overlay" as const,
+        connected: true,
+        state: "connected" as const,
+        count: 1,
+        panels: ["overlay-shell"],
+        roles: ["OVERLAY"],
+        routes: ["/overlay/program"],
+        matchIds: [],
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      draftOperator: {
+        category: "draft-operator" as const,
+        connected: true,
+        state: "connected" as const,
+        count: 1,
+        panels: ["draft-operator"],
+        roles: ["DRAFT_OPERATOR"],
+        routes: ["/draft/match_grand-final"],
+        matchIds: ["match_grand-final"],
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      producer: {
+        category: "producer" as const,
+        connected: true,
+        state: "connected" as const,
+        count: 1,
+        panels: ["producer-panel"],
+        roles: ["PRODUCER"],
+        routes: ["/producer/match_grand-final"],
+        matchIds: ["match_grand-final"],
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      },
+      caster: {
+        category: "caster" as const,
+        connected: true,
+        state: "connected" as const,
+        count: 1,
+        panels: ["caster-panel"],
+        roles: ["CASTER"],
+        routes: ["/caster/match_grand-final"],
+        matchIds: ["match_grand-final"],
+        lastSeenAt: "2026-06-01T00:00:05.000Z"
+      }
+    },
     loadedEventPackageId: "sample-event",
     currentProductionState: "PRE_SHOW" as const,
     adapterStatus: {
@@ -65,9 +223,14 @@ function createSnapshot(): DashboardRuntimeState {
     },
     auditLogStatus: {
       writable: true,
-      path: "event-packages/sample-event/logs/production-log.jsonl"
+      path: "event-packages/sample-event/logs/production-log.jsonl",
+      lastWriteAt: "2026-06-01T00:00:04.000Z"
     },
     emergencyReady: true,
+    emergencyStatus: {
+      ready: true,
+      active: false
+    },
     lastStateUpdateAt: "2026-06-01T00:00:05.000Z",
     validationWarnings: {
       eventPackage: [
@@ -775,20 +938,64 @@ describe("DashboardView", () => {
     expect(themes.textContent).toContain("Generic Standard");
   });
 
-  it("renders system health without raw socket IDs, log paths, warning messages, or emergency details", () => {
+  it("renders system health with safe client, audit, adapter, asset, and emergency details", () => {
     const container = renderDashboard(createReadyState(), {
       initialSection: "system-health"
     });
     const text = container.textContent ?? "";
 
     expect(text).toContain("System Health");
+    expect(text).toContain("State revision");
     expect(text).toContain("Connected clients");
     expect(text).toContain("ADMIN / admin-dashboard");
+    expect(text).toContain("Overlay");
+    expect(text).toContain("Draft operator");
+    expect(text).toContain("Producer");
+    expect(text).toContain("Caster");
+    expect(text).toContain("Generic MOBA");
+    expect(text).toContain("10");
+    expect(text).toContain("Asset health requires review before show.");
+    expect(text).toContain("event-packages/sample-event/logs/production-log.jsonl");
     expect(text).toContain("UNSAFE_FIELD");
     expect(text).not.toContain("socket_raw_123");
-    expect(text).not.toContain("production-log.jsonl");
+    expect(text).not.toContain("socket_raw_overlay");
+    expect(text).not.toContain("socket_raw_draft");
+    expect(text).not.toContain("socket_raw_producer");
+    expect(text).not.toContain("socket_raw_caster");
     expect(text).not.toContain("sensitive-token-value");
     expect(text).not.toContain("private emergency reason");
+    expect(text).not.toContain("C:\\Users");
+  });
+
+  it("renders audit health errors as visible redacted errors", () => {
+    const snapshot = createSnapshot();
+    const errorSnapshot = {
+      ...snapshot,
+      health: {
+        ...snapshot.health,
+        status: "ERROR" as const,
+        auditLogStatus: {
+          writable: false,
+          path: "C:\\Users\\Gavin\\event-packages\\sample-event\\logs\\production-log.jsonl",
+          error: "Audit log append failed at C:\\Users\\Gavin\\production-log.jsonl"
+        }
+      }
+    };
+    const container = renderDashboard(
+      {
+        ...createReadyState(),
+        snapshot: errorSnapshot,
+        health: errorSnapshot.health
+      },
+      { initialSection: "system-health" }
+    );
+    const text = container.textContent ?? "";
+
+    expect(text).toContain("Health status is ERROR");
+    expect(text).toContain("Audit log writer error: [redacted-local-path]");
+    expect(text).toContain("Audit path[redacted-local-path]");
+    expect(text).not.toContain("C:\\Users");
+    expect(text).not.toContain("Gavin");
   });
 
   it("renders empty match setup state", () => {

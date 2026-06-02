@@ -293,9 +293,42 @@ describe("server runtime foundation", () => {
       ok: true,
       data: {
         status: "OK",
+        stateRevision: 1,
         loadedEventPackageId: "sample-event",
         currentProductionState: "PRE_SHOW",
         socketClients: [],
+        clientSummary: {
+          total: 0,
+          readOnlyCount: 0
+        },
+        clientGroups: [],
+        connectionStatus: {
+          dashboard: {
+            connected: false,
+            state: "not-reported",
+            count: 0
+          },
+          overlay: {
+            connected: false,
+            state: "not-reported",
+            count: 0
+          },
+          draftOperator: {
+            connected: false,
+            state: "not-reported",
+            count: 0
+          },
+          producer: {
+            connected: false,
+            state: "not-reported",
+            count: 0
+          },
+          caster: {
+            connected: false,
+            state: "not-reported",
+            count: 0
+          }
+        },
         adapterStatus: {
           "generic-moba": {
             loaded: true
@@ -313,6 +346,10 @@ describe("server runtime foundation", () => {
         auditLogStatus: {
           writable: true,
           path: "event-packages/sample-event/logs/production-log.jsonl"
+        },
+        emergencyStatus: {
+          ready: true,
+          active: false
         }
       }
     });
@@ -1798,9 +1835,46 @@ describe("server runtime foundation", () => {
                 role: "DRAFT_OPERATOR",
                 panel: "draft-operator"
               })
-            ]
+            ],
+            clientSummary: {
+              total: 1,
+              readOnlyCount: 0,
+              byRole: {
+                DRAFT_OPERATOR: 1
+              },
+              byPanel: {
+                "draft-operator": 1
+              }
+            },
+            clientGroups: [
+              expect.objectContaining({
+                category: "draft-operator",
+                role: "DRAFT_OPERATOR",
+                panel: "draft-operator",
+                route: "/draft/match_grand-final",
+                matchId: genericMatchId,
+                count: 1,
+                readOnlyCount: 0
+              })
+            ],
+            connectionStatus: {
+              draftOperator: {
+                connected: true,
+                state: "connected",
+                count: 1,
+                panels: ["draft-operator"],
+                routes: ["/draft/match_grand-final"],
+                matchIds: [genericMatchId]
+              },
+              overlay: {
+                connected: false,
+                state: "not-reported",
+                count: 0
+              }
+            }
           }
         });
+        expect(JSON.stringify(health.body.data.clientGroups)).not.toContain(socket.id);
 
         const requestedStatePromise = waitForSocketEvent<unknown>(socket, "state:full");
         socket.emit("state:request-full");

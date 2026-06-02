@@ -1,5 +1,14 @@
 import { createInitialProductionState, type ProductionRuntimeState } from "@mmbt/core-production";
-import type { ClientRole, GameCode, ProductionState, SocketClientInfo, SystemHealth } from "@mmbt/shared-types";
+import type {
+  ClientRole,
+  GameCode,
+  HealthClientCategory,
+  ProductionState,
+  SocketClientGroup,
+  SocketClientInfo,
+  SocketClientSummary,
+  SystemHealth
+} from "@mmbt/shared-types";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { getDefaultEventPackagePath, getRepositoryRoot, toDisplayPath } from "./paths.js";
@@ -185,6 +194,211 @@ function createSocketClientHealth(client: RuntimeSocketClientInfo): SocketClient
   };
 }
 
+function getClientCategory(client: RuntimeSocketClientInfo): HealthClientCategory {
+  const role = client.role?.toUpperCase();
+  const panel = client.panel?.toLowerCase();
+  const clientType = client.clientType?.toLowerCase();
+  const route = client.route?.toLowerCase();
+
+  if (
+    role === "OVERLAY" ||
+    clientType === "overlay" ||
+    panel === "overlay" ||
+    panel?.startsWith("overlay-") === true ||
+    route?.startsWith("/overlay") === true
+  ) {
+    return "overlay";
+  }
+
+  if (role === "DRAFT_OPERATOR" || panel === "draft-operator" || route?.startsWith("/draft") === true) {
+    return "draft-operator";
+  }
+
+  if (role === "PRODUCER" || panel === "producer-panel" || route?.startsWith("/producer") === true) {
+    return "producer";
+  }
+
+  if (role === "CASTER" || panel === "caster-panel" || route?.startsWith("/caster") === true) {
+    return "caster";
+  }
+
+  if (role === "ADMIN" || panel === "admin-dashboard" || route?.startsWith("/admin") === true) {
+    return "dashboard";
+  }
+
+  return "other";
+}
+
+function incrementCount(counts: Record<string, number>, value: string | undefined): void {
+  const key = value?.trim() || "not-reported";
+
+  counts[key] = (counts[key] ?? 0) + 1;
+}
+
+function getLatestTimestamp(current: string | undefined, candidate: string | undefined): string | undefined {
+  if (!candidate) {
+    return current;
+  }
+
+  if (!current) {
+    return candidate;
+  }
+
+  return Date.parse(candidate) > Date.parse(current) ? candidate : current;
+}
+
+function addUniqueString(values: string[], value: string | undefined): void {
+  if (!value || values.includes(value)) {
+    return;
+  }
+
+  values.push(value);
+}
+
+function createSocketClientSummary(clients: RuntimeSocketClientInfo[]): SocketClientSummary {
+  const summary: SocketClientSummary = {
+    total: clients.length,
+    readOnlyCount: 0,
+    byRole: {},
+    byPanel: {},
+    byClientType: {}
+  };
+
+  clients.forEach((client) => {
+    if (client.readOnly) {
+      summary.readOnlyCount += 1;
+    }
+
+    incrementCount(summary.byRole, client.role);
+    incrementCount(summary.byPanel, client.panel);
+    incrementCount(summary.byClientType, client.clientType);
+    summary.lastSeenAt = getLatestTimestamp(summary.lastSeenAt, client.lastSeenAt);
+  });
+
+  return summary;
+}
+
+function createSocketClientGroups(clients: RuntimeSocketClientInfo[]): SocketClientGroup[] {
+  const groups = new Map<string, SocketClientGroup>();
+
+  clients.forEach((client) => {
+    const category = getClientCategory(client);
+    const key = [
+      category,
+      client.role ?? "",
+      client.panel ?? "",
+      client.clientType ?? "",
+      client.route ?? "",
+      client.matchId ?? ""
+    ].join("|");
+    const existing = groups.get(key);
+
+    if (existing) {
+      existing.count += 1;
+      existing.readOnlyCount += client.readOnly ? 1 : 0;
+      existing.lastSeenAt = getLatestTimestamp(existing.lastSeenAt, client.lastSeenAt);
+      return;
+    }
+
+    groups.set(key, {
+      category,
+      role: client.role,
+      panel: client.panel,
+      clientType: client.clientType,
+      route: client.route,
+      matchId: client.matchId,
+      count: 1,
+      readOnlyCount: client.readOnly ? 1 : 0,
+      lastSeenAt: client.lastSeenAt
+    });
+  });
+
+  return Array.from(groups.values()).sort((left, right) => {
+    const categoryCompare = left.category.localeCompare(right.category);
+
+    if (categoryCompare !== 0) {
+      return categoryCompare;
+    }
+
+    return `${left.role ?? ""}${left.panel ?? ""}${left.route ?? ""}`.localeCompare(
+      `${right.role ?? ""}${right.panel ?? ""}${right.route ?? ""}`
+    );
+  });
+}
+
+function createConnectionTarget(
+  category: Exclude<HealthClientCategory, "other">
+): NonNullable<SystemHealth["connectionStatus"]>["dashboard"] {
+  return {
+    category,
+    connected: false,
+    state: "not-reported",
+    count: 0,
+    panels: [],
+    roles: [],
+    routes: [],
+    matchIds: []
+  };
+}
+
+function getConnectionTargetKey(
+  category: HealthClientCategory
+): keyof NonNullable<SystemHealth["connectionStatus"]> | null {
+  switch (category) {
+    case "dashboard":
+      return "dashboard";
+    case "overlay":
+      return "overlay";
+    case "draft-operator":
+      return "draftOperator";
+    case "producer":
+      return "producer";
+    case "caster":
+      return "caster";
+    default:
+      return null;
+  }
+}
+
+function createConnectionStatus(
+  clients: RuntimeSocketClientInfo[]
+): NonNullable<SystemHealth["connectionStatus"]> {
+  const status: NonNullable<SystemHealth["connectionStatus"]> = {
+    dashboard: createConnectionTarget("dashboard"),
+    overlay: createConnectionTarget("overlay"),
+    draftOperator: createConnectionTarget("draft-operator"),
+    producer: createConnectionTarget("producer"),
+    caster: createConnectionTarget("caster")
+  };
+
+  clients.forEach((client) => {
+    const key = getConnectionTargetKey(getClientCategory(client));
+
+    if (!key) {
+      return;
+    }
+
+    const target = status[key];
+    target.connected = true;
+    target.state = "connected";
+    target.count += 1;
+    addUniqueString(target.panels, client.panel);
+    addUniqueString(target.roles, client.role);
+    addUniqueString(target.routes, client.route);
+    addUniqueString(target.matchIds, client.matchId);
+    target.lastSeenAt = getLatestTimestamp(target.lastSeenAt, client.lastSeenAt);
+  });
+
+  Object.values(status).forEach((target) => {
+    target.panels.sort();
+    target.roles.sort();
+    target.routes.sort();
+    target.matchIds.sort();
+  });
+
+  return status;
+}
+
 function createAdapterStatus(runtimeState: ServerRuntimeState): SystemHealth["adapterStatus"] {
   const adapterStatus: SystemHealth["adapterStatus"] = {
     ...runtimeState.adapters.adapterStatus
@@ -221,7 +435,11 @@ export function createHealthResponse(
     serverStartedAt: runtimeState.serverStartedAt,
     now,
     uptimeSeconds,
+    stateRevision: runtimeState.revision,
     socketClients: runtimeState.socketClients.map(createSocketClientHealth),
+    clientSummary: createSocketClientSummary(runtimeState.socketClients),
+    clientGroups: createSocketClientGroups(runtimeState.socketClients),
+    connectionStatus: createConnectionStatus(runtimeState.socketClients),
     loadedEventPackageId: loadResult.ok ? loadResult.value.packageId : undefined,
     currentProductionState: getCurrentProductionState(runtimeState.production),
     adapterStatus: createAdapterStatus(runtimeState),
@@ -238,6 +456,12 @@ export function createHealthResponse(
       error: runtimeState.auditLog.lastError
     },
     emergencyReady: true,
+    emergencyStatus: {
+      ready: true,
+      active: runtimeState.production.emergency.active,
+      triggeredAt: runtimeState.production.emergency.triggeredAt,
+      clearedAt: runtimeState.production.emergency.clearedAt
+    },
     lastStateUpdateAt: runtimeState.lastStateUpdateAt,
     eventPackagePath: runtimeState.eventPackagePath,
     validationWarnings: {
