@@ -15,13 +15,12 @@ Implemented so far:
 - Local sample event package with Generic MOBA, LoL sample, AOV sample, and HoK sample adapter data.
 - Node server with local event package loading, health/state/adapters/draft/production REST APIs, append-only JSONL audit logging for accepted mutations, and read-only Socket.IO state sync.
 - React + TypeScript + Vite Admin Dashboard with admin, draft operator, producer, and caster/read-only panels.
-- React + TypeScript + Vite Overlay app with read-only Socket.IO sync, required overlay routes, `?debug=1` diagnostics, implemented `/overlay/draft/:matchId` draft rendering, and implemented `/overlay/scorebug/:matchId` score bug rendering.
+- React + TypeScript + Vite Overlay app with read-only Socket.IO sync, required overlay routes, `?debug=1` diagnostics, implemented `/overlay/draft/:matchId` draft rendering, implemented `/overlay/scorebug/:matchId` score bug rendering, and implemented Program / Preview / Emergency rendering.
 - Root lint, typecheck, test, build, and verify scripts.
 - Root `verify` script that runs lint, typecheck, test, and build.
 
 Not implemented yet:
 
-- Full Program / Preview / Emergency graphic rendering beyond shell/standby behavior.
 - OBS/vMix integration.
 - Cloud sync, database persistence, login, official game-client sync, or player-side automation.
 
@@ -101,11 +100,11 @@ The Overlay app runs as a Vite app at `http://127.0.0.1:5174` by default and pro
 Implemented overlay routes include:
 
 ```text
-/overlay/program
-/overlay/preview
+/overlay/program   # Program payload rendering with emergency override implemented
+/overlay/preview   # Preview payload rendering implemented
 /overlay/draft/:matchId   # Draft overlay visual rendering implemented
 /overlay/scorebug/:matchId   # Score bug visual rendering implemented
-/overlay/emergency
+/overlay/emergency   # Emergency full-screen rendering implemented
 ```
 
 Add `?debug=1` to an overlay route to show public-safe diagnostics such as route, match ID, realtime status, server status, revision, and last update timestamp.

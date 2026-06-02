@@ -208,11 +208,11 @@ function renderRoute(path: string, search = "", state = createClientState()): st
 
 describe("overlay route shell", () => {
   it.each([
-    ["/overlay/program", "Program Standby"],
+    ["/overlay/program", "Technical Pause"],
     ["/overlay/preview", "Preview Standby"],
     ["/overlay/draft/match_grand-final", "Draft state unavailable"],
     ["/overlay/scorebug/match_grand-final", "scorebug-overlay"],
-    ["/overlay/emergency", "Emergency Active"]
+    ["/overlay/emergency", "Technical Pause"]
   ])("renders %s", (path, expectedText) => {
     expect(renderRoute(path)).toContain(expectedText);
   });
@@ -239,12 +239,24 @@ describe("overlay route shell", () => {
         })
       )
     ).toContain("Signal unavailable");
+    const staleSnapshot = createSnapshot();
+
     expect(
       renderRoute(
         "/overlay/program",
         "",
         createClientState({
-          socketStatus: "disconnected"
+          socketStatus: "disconnected",
+          snapshot: {
+            ...staleSnapshot,
+            production: {
+              ...staleSnapshot.production,
+              emergency: {
+                active: false,
+                message: null
+              }
+            }
+          }
         })
       )
     ).toContain("Signal stale");

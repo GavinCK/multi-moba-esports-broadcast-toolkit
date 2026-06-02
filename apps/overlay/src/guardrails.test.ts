@@ -46,6 +46,12 @@ describe("overlay source guardrails", () => {
     );
   });
 
+  it("does not render mutation control elements", () => {
+    const source = readProductionSource();
+
+    expect(source).not.toMatch(/<button|<input|<select|<textarea|role=["']button["']/);
+  });
+
   it("does not add forbidden future-scope integrations", () => {
     const source = readProductionSource();
 

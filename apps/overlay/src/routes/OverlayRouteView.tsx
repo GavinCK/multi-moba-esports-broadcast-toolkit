@@ -1,40 +1,12 @@
-import type { OverlayClientState, OverlayMatch } from "../client/types";
+import type { OverlayClientState } from "../client/types";
 import { OverlayDebugPanel } from "../components/OverlayDebugPanel";
 import { DraftOverlay } from "../overlays/DraftOverlay";
+import { EmergencyOverlay } from "../overlays/EmergencyOverlay";
+import { PreviewOverlay } from "../overlays/PreviewOverlay";
+import { ProgramOverlay } from "../overlays/ProgramOverlay";
 import { ScoreBugOverlay } from "../overlays/ScoreBugOverlay";
 import type { OverlayRoute } from "./route";
-import { selectMatchForRoute, selectOverlayRuntimeStatus } from "./selectors";
-
-interface OverlayRouteViewProps {
-  route: OverlayRoute;
-  clientState: OverlayClientState;
-}
-
-function getShellCopy(route: OverlayRoute, match: OverlayMatch | null): {
-  title: string;
-  subtitle: string;
-} {
-  switch (route.kind) {
-    case "program":
-      return { title: "Program Standby", subtitle: "No program graphic" };
-    case "preview":
-      return { title: "Preview Standby", subtitle: "No preview graphic" };
-    case "draft":
-      return {
-        title: "Draft Overlay Shell",
-        subtitle: match ? match.title : "Match not found"
-      };
-    case "scorebug":
-      return {
-        title: "Score Bug Shell",
-        subtitle: match ? `${match.title} | ${match.score.blue}-${match.score.red}` : "Match not found"
-      };
-    case "emergency":
-      return { title: "Emergency Standby", subtitle: "Transparent standby" };
-    default:
-      return { title: "Overlay Route Not Found", subtitle: "Transparent standby" };
-  }
-}
+import { selectOverlayRuntimeStatus } from "./selectors";
 
 function getRuntimeMessage(status: ReturnType<typeof selectOverlayRuntimeStatus>): string {
   switch (status) {
@@ -53,25 +25,44 @@ function getRuntimeMessage(status: ReturnType<typeof selectOverlayRuntimeStatus>
   }
 }
 
-function getProgramPreviewSubtitle(route: OverlayRoute, clientState: OverlayClientState): string | null {
-  const takeState = clientState.snapshot?.production.graphicTakeState;
-
-  if (!takeState) {
-    return null;
-  }
-
-  if (route.kind === "program" && takeState.programPayload !== null) {
-    return `${takeState.graphicType} on program`;
-  }
-
-  if (route.kind === "preview" && takeState.previewPayload !== null) {
-    return `${takeState.graphicType} in preview`;
-  }
-
-  return null;
+interface OverlayRouteViewProps {
+  route: OverlayRoute;
+  clientState: OverlayClientState;
 }
 
 export function OverlayRouteView({ route, clientState }: OverlayRouteViewProps) {
+  if (route.kind === "program") {
+    return (
+      <div className="overlay-root" data-testid="overlay-root">
+        <main
+          className="overlay-canvas overlay-canvas--program"
+          data-testid="overlay-canvas"
+          data-canvas-size="1920x1080"
+          aria-label={`${route.routeName} overlay`}
+        >
+          <ProgramOverlay clientState={clientState} debug={route.debug} />
+          {route.debug ? <OverlayDebugPanel route={route} clientState={clientState} /> : null}
+        </main>
+      </div>
+    );
+  }
+
+  if (route.kind === "preview") {
+    return (
+      <div className="overlay-root" data-testid="overlay-root">
+        <main
+          className="overlay-canvas overlay-canvas--preview"
+          data-testid="overlay-canvas"
+          data-canvas-size="1920x1080"
+          aria-label={`${route.routeName} overlay`}
+        >
+          <PreviewOverlay clientState={clientState} debug={route.debug} />
+          {route.debug ? <OverlayDebugPanel route={route} clientState={clientState} /> : null}
+        </main>
+      </div>
+    );
+  }
+
   if (route.kind === "draft") {
     return (
       <div className="overlay-root" data-testid="overlay-root">
@@ -104,16 +95,23 @@ export function OverlayRouteView({ route, clientState }: OverlayRouteViewProps) 
     );
   }
 
-  const match = selectMatchForRoute(clientState, route);
+  if (route.kind === "emergency") {
+    return (
+      <div className="overlay-root" data-testid="overlay-root">
+        <main
+          className="overlay-canvas overlay-canvas--emergency"
+          data-testid="overlay-canvas"
+          data-canvas-size="1920x1080"
+          aria-label={`${route.routeName} overlay`}
+        >
+          <EmergencyOverlay clientState={clientState} debug={route.debug} />
+          {route.debug ? <OverlayDebugPanel route={route} clientState={clientState} /> : null}
+        </main>
+      </div>
+    );
+  }
+
   const runtimeStatus = selectOverlayRuntimeStatus(clientState, route);
-  const shellCopy = getShellCopy(route, match);
-  const productionSubtitle = getProgramPreviewSubtitle(route, clientState);
-  const emergencyActive = clientState.snapshot?.production.emergency.active === true;
-  const title = route.kind === "emergency" && emergencyActive ? "Emergency Active" : shellCopy.title;
-  const subtitle =
-    route.kind === "emergency" && emergencyActive
-      ? "Stand by"
-      : productionSubtitle ?? shellCopy.subtitle;
 
   return (
     <div className="overlay-root" data-testid="overlay-root">
@@ -125,8 +123,8 @@ export function OverlayRouteView({ route, clientState }: OverlayRouteViewProps) 
       >
         <section className="overlay-standby" aria-live="polite">
           <p className="overlay-standby__kicker">{getRuntimeMessage(runtimeStatus)}</p>
-          <h1>{title}</h1>
-          <p>{subtitle}</p>
+          <h1>Overlay Route Not Found</h1>
+          <p>Transparent standby</p>
         </section>
         {route.debug ? <OverlayDebugPanel route={route} clientState={clientState} /> : null}
       </main>
