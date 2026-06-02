@@ -211,7 +211,7 @@ describe("overlay route shell", () => {
     ["/overlay/program", "Program Standby"],
     ["/overlay/preview", "Preview Standby"],
     ["/overlay/draft/match_grand-final", "Draft state unavailable"],
-    ["/overlay/scorebug/match_grand-final", "Score Bug Shell"],
+    ["/overlay/scorebug/match_grand-final", "scorebug-overlay"],
     ["/overlay/emergency", "Emergency Active"]
   ])("renders %s", (path, expectedText) => {
     expect(renderRoute(path)).toContain(expectedText);

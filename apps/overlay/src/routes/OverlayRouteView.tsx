@@ -1,6 +1,7 @@
 import type { OverlayClientState, OverlayMatch } from "../client/types";
 import { OverlayDebugPanel } from "../components/OverlayDebugPanel";
 import { DraftOverlay } from "../overlays/DraftOverlay";
+import { ScoreBugOverlay } from "../overlays/ScoreBugOverlay";
 import type { OverlayRoute } from "./route";
 import { selectMatchForRoute, selectOverlayRuntimeStatus } from "./selectors";
 
@@ -81,6 +82,22 @@ export function OverlayRouteView({ route, clientState }: OverlayRouteViewProps) 
           aria-label={`${route.routeName} overlay`}
         >
           <DraftOverlay clientState={clientState} matchId={route.matchId} debug={route.debug} />
+          {route.debug ? <OverlayDebugPanel route={route} clientState={clientState} /> : null}
+        </main>
+      </div>
+    );
+  }
+
+  if (route.kind === "scorebug") {
+    return (
+      <div className="overlay-root" data-testid="overlay-root">
+        <main
+          className="overlay-canvas overlay-canvas--scorebug"
+          data-testid="overlay-canvas"
+          data-canvas-size="1920x1080"
+          aria-label={`${route.routeName} overlay`}
+        >
+          <ScoreBugOverlay clientState={clientState} matchId={route.matchId} debug={route.debug} />
           {route.debug ? <OverlayDebugPanel route={route} clientState={clientState} /> : null}
         </main>
       </div>

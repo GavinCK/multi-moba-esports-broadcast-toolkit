@@ -15,13 +15,12 @@ Implemented so far:
 - Local sample event package with Generic MOBA, LoL sample, AOV sample, and HoK sample adapter data.
 - Node server with local event package loading, health/state/adapters/draft/production REST APIs, append-only JSONL audit logging for accepted mutations, and read-only Socket.IO state sync.
 - React + TypeScript + Vite Admin Dashboard with admin, draft operator, producer, and caster/read-only panels.
-- React + TypeScript + Vite Overlay app with read-only Socket.IO sync, required overlay routes, `?debug=1` diagnostics, and implemented `/overlay/draft/:matchId` draft rendering.
+- React + TypeScript + Vite Overlay app with read-only Socket.IO sync, required overlay routes, `?debug=1` diagnostics, implemented `/overlay/draft/:matchId` draft rendering, and implemented `/overlay/scorebug/:matchId` score bug rendering.
 - Root lint, typecheck, test, build, and verify scripts.
 - Root `verify` script that runs lint, typecheck, test, and build.
 
 Not implemented yet:
 
-- Full Score Bug visual rendering.
 - Full Program / Preview / Emergency graphic rendering beyond shell/standby behavior.
 - OBS/vMix integration.
 - Cloud sync, database persistence, login, official game-client sync, or player-side automation.
@@ -105,7 +104,7 @@ Implemented overlay routes include:
 /overlay/program
 /overlay/preview
 /overlay/draft/:matchId   # Draft overlay visual rendering implemented
-/overlay/scorebug/:matchId
+/overlay/scorebug/:matchId   # Score bug visual rendering implemented
 /overlay/emergency
 ```
 
