@@ -4,6 +4,7 @@ import type {
   OverlayClientState,
   OverlayHealthResponse,
   OverlayHealthUpdatePayload,
+  OverlayRealtimeDraftPayload,
   OverlayRuntimeState,
   OverlaySocketStatus,
   OverlayStateFullPayload
@@ -22,6 +23,10 @@ export type OverlayAction =
   | {
       type: "socket:health-update";
       envelope: SocketEnvelope<OverlayHealthUpdatePayload>;
+    }
+  | {
+      type: "socket:draft-updated";
+      envelope: SocketEnvelope<OverlayRealtimeDraftPayload>;
     }
   | {
       type: "socket:error";
@@ -70,12 +75,73 @@ function applySnapshot(
   snapshot: OverlayRuntimeState,
   health: OverlayHealthResponse = snapshot.health
 ): OverlayClientState {
+  const previousDrafts = state.snapshot?.drafts ?? {};
+  const drafts = Object.fromEntries(
+    Object.entries(snapshot.drafts).map(([draftId, draft]) => {
+      const previousDraft = previousDrafts[draftId];
+
+      return [
+        draftId,
+        previousDraft?.actions
+          ? {
+              ...draft,
+              actions: previousDraft.actions
+            }
+          : draft
+      ];
+    })
+  );
+
   return {
     ...state,
-    snapshot,
+    snapshot: {
+      ...snapshot,
+      drafts
+    },
     health,
     lastUpdatedAt: snapshot.timestamp,
     socketMessage: null
+  };
+}
+
+function applyDraftUpdate(
+  state: OverlayClientState,
+  envelope: SocketEnvelope<OverlayRealtimeDraftPayload>
+): OverlayClientState {
+  if (!state.snapshot) {
+    return state;
+  }
+
+  const payload = envelope.payload;
+  const draftId = payload.draftId;
+  const summary = payload.draft.summary;
+  const draft = payload.draft.draft;
+
+  return {
+    ...state,
+    snapshot: {
+      ...state.snapshot,
+      revision:
+        typeof payload.revision === "number"
+          ? Math.max(state.snapshot.revision, payload.revision)
+          : state.snapshot.revision,
+      timestamp: envelope.timestamp,
+      drafts: {
+        ...state.snapshot.drafts,
+        [draftId]: {
+          ...summary,
+          status: draft.status,
+          currentPhaseIndex: draft.currentPhaseIndex,
+          timer: { ...draft.timer },
+          lockedHeroIds: [...draft.lockedHeroIds],
+          bannedHeroIds: [...draft.bannedHeroIds],
+          pickedHeroIds: [...draft.pickedHeroIds],
+          actions: draft.actions.map((action) => ({ ...action })),
+          updatedAt: draft.updatedAt ?? envelope.timestamp
+        }
+      }
+    },
+    lastUpdatedAt: envelope.timestamp
   };
 }
 
@@ -106,6 +172,8 @@ export function overlayReducer(
             }
           : state.snapshot
       };
+    case "socket:draft-updated":
+      return applyDraftUpdate(state, action.envelope);
     case "socket:error":
       return {
         ...state,

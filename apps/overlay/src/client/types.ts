@@ -1,6 +1,7 @@
 import type {
   DraftPhaseDefinition,
   DraftRuleset,
+  DraftAction,
   DraftTimerState,
   EventInfo,
   GameAdapterCapabilities,
@@ -13,7 +14,9 @@ import type {
   ProductionState,
   Sponsor,
   SystemHealth,
-  Team
+  Team,
+  Hero,
+  ThemeConfig
 } from "@mmbt/shared-types";
 
 export type OverlaySocketStatus =
@@ -40,6 +43,7 @@ export interface OverlayAdapterSummary {
   heroCount: number;
   rulesetCount: number;
   capabilities: GameAdapterCapabilities;
+  heroes?: Hero[];
 }
 
 export interface OverlayDraftSummary {
@@ -66,6 +70,36 @@ export interface OverlayDraftSummary {
   bannedHeroIds: string[];
   pickedHeroIds: string[];
   updatedAt?: string;
+  actions?: DraftAction[];
+}
+
+export interface OverlayPublicDraftState {
+  id: string;
+  gameId: string;
+  rulesetId: string;
+  gameCode: GameCode;
+  status: OverlayDraftSummary["status"];
+  currentPhaseIndex: number;
+  timer: DraftTimerState;
+  actions: DraftAction[];
+  lockedHeroIds: string[];
+  bannedHeroIds: string[];
+  pickedHeroIds: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface OverlayRealtimeDraftPayload {
+  revision: number;
+  reason?: string;
+  draftId: string;
+  matchId: string;
+  gameId: string;
+  actionId?: string;
+  draft: {
+    summary: OverlayDraftSummary;
+    draft: OverlayPublicDraftState;
+  };
 }
 
 export interface OverlayGraphicTakeState {
@@ -112,12 +146,8 @@ export interface OverlayRuntimeState {
   teams: Team[];
   sponsors: Sponsor[];
   games: OverlayGame[];
-  rulesets: Array<Pick<DraftRuleset, "id" | "gameCode" | "name" | "version">>;
-  themes: Array<{
-    id: string;
-    name?: string;
-    version?: string;
-  }>;
+  rulesets: DraftRuleset[];
+  themes: ThemeConfig[];
   currentMatchId: string | null;
   currentGameId: string | null;
   drafts: Record<string, OverlayDraftSummary>;

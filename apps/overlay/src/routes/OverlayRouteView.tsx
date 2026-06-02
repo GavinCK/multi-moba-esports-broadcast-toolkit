@@ -1,5 +1,6 @@
 import type { OverlayClientState, OverlayMatch } from "../client/types";
 import { OverlayDebugPanel } from "../components/OverlayDebugPanel";
+import { DraftOverlay } from "../overlays/DraftOverlay";
 import type { OverlayRoute } from "./route";
 import { selectMatchForRoute, selectOverlayRuntimeStatus } from "./selectors";
 
@@ -70,6 +71,22 @@ function getProgramPreviewSubtitle(route: OverlayRoute, clientState: OverlayClie
 }
 
 export function OverlayRouteView({ route, clientState }: OverlayRouteViewProps) {
+  if (route.kind === "draft") {
+    return (
+      <div className="overlay-root" data-testid="overlay-root">
+        <main
+          className="overlay-canvas overlay-canvas--draft"
+          data-testid="overlay-canvas"
+          data-canvas-size="1920x1080"
+          aria-label={`${route.routeName} overlay`}
+        >
+          <DraftOverlay clientState={clientState} matchId={route.matchId} debug={route.debug} />
+          {route.debug ? <OverlayDebugPanel route={route} clientState={clientState} /> : null}
+        </main>
+      </div>
+    );
+  }
+
   const match = selectMatchForRoute(clientState, route);
   const runtimeStatus = selectOverlayRuntimeStatus(clientState, route);
   const shellCopy = getShellCopy(route, match);

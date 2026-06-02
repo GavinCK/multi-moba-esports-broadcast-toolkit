@@ -19,6 +19,9 @@ export function useOverlayState(route: OverlayRoute) {
         onHealthUpdate(envelope) {
           dispatch({ type: "socket:health-update", envelope });
         },
+        onDraftUpdated(envelope) {
+          dispatch({ type: "socket:draft-updated", envelope });
+        },
         onSocketError(message) {
           dispatch({ type: "socket:error", message });
         }

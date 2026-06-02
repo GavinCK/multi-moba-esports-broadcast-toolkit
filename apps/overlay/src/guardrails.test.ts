@@ -42,7 +42,7 @@ describe("overlay source guardrails", () => {
     const source = readProductionSource();
 
     expect(source).not.toMatch(
-      /emit\([^;\n]*(draft:start|draft:pause|draft:resume|draft:hover|draft:lock|draft:undo|draft:reset|draft:complete|production:set-state|graphics:take|emergency:trigger|emergency:clear)/
+      /emit\([^;\n]*(draft:start|draft:pause|draft:resume|draft:hover|draft:lock|draft:undo|draft:reset|draft:complete|production:set-state|graphics:preview|graphics:take|graphics:clear|emergency:trigger|emergency:clear)/
     );
   });
 

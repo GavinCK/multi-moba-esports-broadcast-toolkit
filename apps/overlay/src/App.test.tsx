@@ -81,13 +81,47 @@ function createSnapshot(): OverlayRuntimeState {
       {
         id: "generic-standard",
         gameCode: "generic-moba",
-        name: "Generic Standard"
+        name: "Generic Standard",
+        allowDuplicateHeroes: false,
+        globalBanAcrossSeries: false,
+        globalPickAcrossSeries: false,
+        phases: [
+          {
+            id: "ban-blue-1",
+            type: "BAN",
+            team: "BLUE",
+            count: 1,
+            timeSeconds: 30,
+            label: "Blue Ban 1"
+          }
+        ]
       }
     ],
     themes: [
       {
         id: "default-theme",
-        name: "Default"
+        name: "Default",
+        version: "0.1.0",
+        colors: {
+          background: "transparent",
+          primary: "#2563eb",
+          secondary: "#dc2626",
+          accent: "#facc15",
+          blueTeam: "#2563eb",
+          redTeam: "#dc2626",
+          textPrimary: "#f8fafc",
+          textSecondary: "#cbd5e1"
+        },
+        typography: {
+          headingFont: "Inter",
+          bodyFont: "Inter"
+        },
+        layout: {
+          safeMarginPx: 64,
+          borderRadiusPx: 8,
+          animationSpeedMs: 250
+        },
+        assets: {}
       }
     ],
     currentMatchId: "match_grand-final",
@@ -176,7 +210,7 @@ describe("overlay route shell", () => {
   it.each([
     ["/overlay/program", "Program Standby"],
     ["/overlay/preview", "Preview Standby"],
-    ["/overlay/draft/match_grand-final", "Draft Overlay Shell"],
+    ["/overlay/draft/match_grand-final", "Draft state unavailable"],
     ["/overlay/scorebug/match_grand-final", "Score Bug Shell"],
     ["/overlay/emergency", "Emergency Active"]
   ])("renders %s", (path, expectedText) => {

@@ -20,7 +20,9 @@ const MUTATION_SOCKET_EVENTS = [
   "draft:reset",
   "draft:complete",
   "production:set-state",
+  "graphics:preview",
   "graphics:take",
+  "graphics:clear",
   "emergency:trigger",
   "emergency:clear"
 ] as const;
@@ -97,6 +99,7 @@ describe("overlay socket client", () => {
       onStatus: vi.fn(),
       onStateFull: vi.fn(),
       onHealthUpdate: vi.fn(),
+      onDraftUpdated: vi.fn(),
       onSocketError: vi.fn()
     };
     const connection = connectOverlaySocket(handlers, {
@@ -127,6 +130,7 @@ describe("overlay socket client", () => {
       onStatus: vi.fn(),
       onStateFull: vi.fn(),
       onHealthUpdate: vi.fn(),
+      onDraftUpdated: vi.fn(),
       onSocketError: vi.fn()
     };
 
@@ -137,6 +141,7 @@ describe("overlay socket client", () => {
 
     fake.trigger("connect");
     fake.trigger(OVERLAY_SOCKET_EVENTS.STATE_FULL, { payload: { revision: 1 } });
+    fake.trigger(OVERLAY_SOCKET_EVENTS.DRAFT_UPDATED, { payload: { revision: 2 } });
     fake.trigger(OVERLAY_SOCKET_EVENTS.HEALTH_UPDATE, { payload: { revision: 1 } });
     fake.trigger(OVERLAY_SOCKET_EVENTS.ERROR, {
       payload: {
@@ -147,6 +152,7 @@ describe("overlay socket client", () => {
     fake.triggerReconnectAttempt();
 
     expect(handlers.onStateFull).toHaveBeenCalledOnce();
+    expect(handlers.onDraftUpdated).toHaveBeenCalledOnce();
     expect(handlers.onHealthUpdate).toHaveBeenCalledOnce();
     expect(handlers.onSocketError).toHaveBeenCalledWith(
       "Socket error: SOCKET_MUTATION_NOT_ALLOWED"

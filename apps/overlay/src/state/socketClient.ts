@@ -3,6 +3,7 @@ import { io, type Socket } from "socket.io-client";
 
 import type {
   OverlayHealthUpdatePayload,
+  OverlayRealtimeDraftPayload,
   OverlaySocketStatus,
   OverlayStateFullPayload
 } from "../client/types";
@@ -31,6 +32,7 @@ export interface OverlaySocketHandlers {
   onStatus(status: OverlaySocketStatus, message?: string): void;
   onStateFull(envelope: SocketEnvelope<OverlayStateFullPayload>): void;
   onHealthUpdate(envelope: SocketEnvelope<OverlayHealthUpdatePayload>): void;
+  onDraftUpdated(envelope: SocketEnvelope<OverlayRealtimeDraftPayload>): void;
   onSocketError(message: string): void;
 }
 
@@ -72,7 +74,6 @@ export interface OverlayClientHelloPayload {
 
 const REQUEST_FULL_ON_UPDATE_EVENTS = [
   OVERLAY_SOCKET_EVENTS.STATE_PATCH,
-  OVERLAY_SOCKET_EVENTS.DRAFT_UPDATED,
   OVERLAY_SOCKET_EVENTS.DRAFT_TIMER,
   OVERLAY_SOCKET_EVENTS.PRODUCTION_STATE,
   OVERLAY_SOCKET_EVENTS.GRAPHICS_PREVIEW,
@@ -197,6 +198,11 @@ export function connectOverlaySocket(
 
   socket.on(OVERLAY_SOCKET_EVENTS.HEALTH_UPDATE, (envelope: unknown) => {
     handlers.onHealthUpdate(envelope as SocketEnvelope<OverlayHealthUpdatePayload>);
+  });
+
+  socket.on(OVERLAY_SOCKET_EVENTS.DRAFT_UPDATED, (envelope: unknown) => {
+    handlers.onDraftUpdated(envelope as SocketEnvelope<OverlayRealtimeDraftPayload>);
+    requestFullState();
   });
 
   socket.on(OVERLAY_SOCKET_EVENTS.ERROR, (envelope: unknown) => {
