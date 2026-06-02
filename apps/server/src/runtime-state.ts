@@ -94,6 +94,10 @@ function getRuntimeHealthStatus(runtimeState: ServerRuntimeState): SystemHealth[
     return "ERROR";
   }
 
+  if (!runtimeState.auditLog.writable) {
+    return "ERROR";
+  }
+
   if (runtimeState.adapterValidationWarnings.length > 0) {
     return "WARN";
   }

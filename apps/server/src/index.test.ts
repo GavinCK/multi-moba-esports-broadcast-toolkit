@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -195,6 +195,10 @@ function createTempEventPackage(prefix = "mmbt-draft-api-"): string {
 }
 
 function readAuditLogEntries(packagePath: string): unknown[] {
+  return readAuditLogLines(packagePath).map((line) => JSON.parse(line) as unknown);
+}
+
+function readAuditLogLines(packagePath: string): string[] {
   const logPath = join(packagePath, "logs", "production-log.jsonl");
 
   if (!existsSync(logPath)) {
@@ -203,8 +207,7 @@ function readAuditLogEntries(packagePath: string): unknown[] {
 
   return readFileSync(logPath, "utf8")
     .split(/\r?\n/)
-    .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as unknown);
+    .filter((line) => line.trim().length > 0);
 }
 
 function expectApiEnvelope(body: unknown, ok: boolean): void {
@@ -1565,6 +1568,182 @@ describe("server runtime foundation", () => {
           "PRODUCTION_STATE_CHANGED",
           "PRODUCTION_STATE_CHANGED"
         ]);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps audit JSONL append-only, parseable, and chronological", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-audit-jsonl-");
+    const logPath = join(tempPackagePath, "logs", "production-log.jsonl");
+    const preexistingEntry = {
+      id: "log_preexisting",
+      timestamp: "2026-06-01T03:59:59.000Z",
+      event: "PREEXISTING_ENTRY"
+    };
+
+    try {
+      writeFileSync(logPath, `${JSON.stringify(preexistingEntry)}\n`, "utf8");
+
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const start = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/start`, {
+          method: "POST",
+          body: { operatorId: "draft-op", now: "2026-06-01T06:10:00.000Z" }
+        });
+        const pause = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/pause`, {
+          method: "POST",
+          body: { operatorId: "draft-op", now: "2026-06-01T06:10:05.000Z" }
+        });
+        const resume = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/resume`, {
+          method: "POST",
+          body: { operatorId: "draft-op", now: "2026-06-01T06:10:10.000Z" }
+        });
+        const health = await requestJson(baseUrl, "/api/health");
+
+        expect(start.status).toBe(200);
+        expect(pause.status).toBe(200);
+        expect(resume.status).toBe(200);
+        expect(health.body).toMatchObject({
+          ok: true,
+          data: {
+            status: "OK",
+            auditLogStatus: {
+              writable: true,
+              lastWriteAt: "2026-06-01T06:10:10.000Z"
+            }
+          }
+        });
+
+        const lines = readAuditLogLines(tempPackagePath);
+        const entries = lines.map((line) => JSON.parse(line) as { event: string; timestamp: string });
+
+        expect(lines).toHaveLength(4);
+        expect(lines[0]).toBe(JSON.stringify(preexistingEntry));
+        expect(entries.map((entry) => entry.event)).toEqual([
+          "PREEXISTING_ENTRY",
+          "DRAFT_STARTED",
+          "DRAFT_PAUSED",
+          "DRAFT_RESUMED"
+        ]);
+        expect(entries.map((entry) => entry.timestamp)).toEqual([
+          "2026-06-01T03:59:59.000Z",
+          "2026-06-01T06:10:00.000Z",
+          "2026-06-01T06:10:05.000Z",
+          "2026-06-01T06:10:10.000Z"
+        ]);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects configured audit log paths outside the package logs directory", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-audit-path-");
+
+    try {
+      const eventPath = join(tempPackagePath, "event.json");
+      const eventFile = JSON.parse(readFileSync(eventPath, "utf8")) as {
+        defaults: { productionLogPath: string };
+      };
+
+      eventFile.defaults.productionLogPath = "production-log.jsonl";
+      writeFileSync(eventPath, `${JSON.stringify(eventFile, null, 2)}\n`, "utf8");
+
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const health = await requestJson(baseUrl, "/api/health");
+        const start = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/start`, {
+          method: "POST",
+          body: { operatorId: "draft-op", now: "2026-06-01T06:20:00.000Z" }
+        });
+        const state = await requestJson(baseUrl, "/api/state");
+
+        expect(health.body).toMatchObject({
+          ok: true,
+          data: {
+            status: "ERROR",
+            auditLogStatus: {
+              writable: false,
+              error: "Event package production log path must be a JSONL file inside the package logs directory."
+            }
+          }
+        });
+        expect(start.status).toBe(500);
+        expect(start.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "AUDIT_LOG_WRITE_FAILED"
+          }
+        });
+        expect(state.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 1,
+            drafts: {
+              [genericDraftId]: expect.objectContaining({
+                status: "READY"
+              })
+            }
+          }
+        });
+        expect(existsSync(join(tempPackagePath, "production-log.jsonl"))).toBe(false);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces audit log write failures in health and returns a structured error without committing", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-audit-failure-");
+    const logPath = join(tempPackagePath, "logs", "production-log.jsonl");
+
+    try {
+      mkdirSync(logPath);
+
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const start = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/start`, {
+          method: "POST",
+          body: { operatorId: "draft-op", now: "2026-06-01T06:30:00.000Z" }
+        });
+        const health = await requestJson(baseUrl, "/api/health");
+        const state = await requestJson(baseUrl, "/api/state");
+        const responseText = JSON.stringify([start.body, health.body]);
+
+        expect(start.status).toBe(500);
+        expect(start.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "AUDIT_LOG_WRITE_FAILED",
+            details: {
+              path: "event-package/logs/production-log.jsonl",
+              reason: expect.stringMatching(/^Audit log append failed with filesystem error /)
+            }
+          }
+        });
+        expect(health.body).toMatchObject({
+          ok: true,
+          data: {
+            status: "ERROR",
+            auditLogStatus: {
+              writable: false,
+              path: "event-package/logs/production-log.jsonl",
+              error: expect.stringMatching(/^Audit log append failed with filesystem error /)
+            }
+          }
+        });
+        expect(state.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 1,
+            drafts: {
+              [genericDraftId]: expect.objectContaining({
+                status: "READY"
+              })
+            }
+          }
+        });
+        expect(responseText).not.toContain(tempPackagePath);
+        expect(responseText).not.toMatch(/[A-Z]:\\\\|Users\\\\|AppData\\\\|\\\\Temp\\\\|\/tmp\//i);
       });
     } finally {
       rmSync(tempPackagePath, { recursive: true, force: true });

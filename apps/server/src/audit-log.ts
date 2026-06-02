@@ -44,12 +44,20 @@ function toPortablePath(pathValue: string): string {
   return pathValue.replace(/\\/g, "/");
 }
 
-function toDisplayPath(absolutePath: string, repositoryRoot: string): string {
+function toDisplayPath(absolutePath: string, repositoryRoot: string, eventPackageRoot: string): string {
   const relativePath = relative(repositoryRoot, absolutePath);
 
-  return relativePath.length > 0 && !relativePath.startsWith("..") && !isAbsolute(relativePath)
-    ? toPortablePath(relativePath)
-    : toPortablePath(absolutePath);
+  if (relativePath.length > 0 && !relativePath.startsWith("..") && !isAbsolute(relativePath)) {
+    return toPortablePath(relativePath);
+  }
+
+  const packageRelativePath = relative(eventPackageRoot, absolutePath);
+
+  if (packageRelativePath.length > 0 && !packageRelativePath.startsWith("..") && !isAbsolute(packageRelativePath)) {
+    return `event-package/${toPortablePath(packageRelativePath)}`;
+  }
+
+  return "[redacted-audit-log-path]";
 }
 
 function ensureInsideRoot(root: string, candidatePath: string): boolean {
@@ -59,24 +67,44 @@ function ensureInsideRoot(root: string, candidatePath: string): boolean {
 }
 
 function normalizeLogPath(eventPackageRoot: string, logPath: string): string | null {
+  const trimmedLogPath = logPath.trim();
+  const segments = trimmedLogPath.split("/");
+
   if (
-    logPath.trim().length === 0 ||
-    isAbsolute(logPath) ||
-    /^[a-z][a-z0-9+.-]*:/i.test(logPath) ||
-    logPath.includes("..") ||
-    logPath.includes("?") ||
-    logPath.includes("#")
+    trimmedLogPath.length === 0 ||
+    isAbsolute(trimmedLogPath) ||
+    /^[a-z][a-z0-9+.-]*:/i.test(trimmedLogPath) ||
+    trimmedLogPath.includes("\\") ||
+    trimmedLogPath.includes("?") ||
+    trimmedLogPath.includes("#") ||
+    segments.length < 2 ||
+    segments[0] !== "logs" ||
+    !segments[segments.length - 1]?.endsWith(".jsonl") ||
+    segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")
   ) {
     return null;
   }
 
-  const absolutePath = resolve(eventPackageRoot, logPath);
+  const absolutePath = resolve(eventPackageRoot, trimmedLogPath);
+  const logsRoot = resolve(eventPackageRoot, "logs");
 
-  return ensureInsideRoot(eventPackageRoot, absolutePath) ? absolutePath : null;
+  return ensureInsideRoot(logsRoot, absolutePath) && absolutePath !== logsRoot ? absolutePath : null;
 }
 
 function toJsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+function getSafeWriteError(error: unknown): string {
+  if (error instanceof Error && "code" in error) {
+    const errorCode = (error as { code?: unknown }).code;
+
+    if (typeof errorCode === "string") {
+      return `Audit log append failed with filesystem error ${errorCode}.`;
+    }
+  }
+
+  return "Audit log append failed with an unknown filesystem error.";
 }
 
 export function createAuditLogState(options: CreateAuditLogStateOptions): AuditLogRuntimeState {
@@ -96,13 +124,13 @@ export function createAuditLogState(options: CreateAuditLogStateOptions): AuditL
       absolutePath: null,
       displayPath: null,
       writable: false,
-      lastError: "Event package production log path is not a safe local path."
+      lastError: "Event package production log path must be a JSONL file inside the package logs directory."
     };
   }
 
   return {
     absolutePath,
-    displayPath: toDisplayPath(absolutePath, options.repositoryRoot),
+    displayPath: toDisplayPath(absolutePath, options.repositoryRoot, options.eventPackageRoot),
     writable: true
   };
 }
@@ -132,7 +160,7 @@ export function appendAuditLogEntry(
     return ok(entry);
   } catch (error) {
     auditLog.writable = false;
-    auditLog.lastError = error instanceof Error ? error.message : "Unknown audit log write error.";
+    auditLog.lastError = getSafeWriteError(error);
 
     return fail({
       code: "AUDIT_LOG_WRITE_FAILED",

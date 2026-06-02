@@ -24,5 +24,5 @@ export function toDisplayPath(absolutePath: string, repositoryRoot = getReposito
     return toPortablePath(relativePath);
   }
 
-  return toPortablePath(absolutePath);
+  return "[external-local-path]";
 }
