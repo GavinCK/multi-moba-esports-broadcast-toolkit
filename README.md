@@ -48,6 +48,7 @@ docs
 ## Documentation
 
 - [Local LAN deployment and browser source guide](docs/deployment-guide.md)
+- [Operator guide](docs/operator-guide.md)
 
 ## Commands
 
