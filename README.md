@@ -45,6 +45,10 @@ tests
 docs
 ```
 
+## Documentation
+
+- [Local LAN deployment and browser source guide](docs/deployment-guide.md)
+
 ## Commands
 
 After `pnpm` is available, the root scripts are:
