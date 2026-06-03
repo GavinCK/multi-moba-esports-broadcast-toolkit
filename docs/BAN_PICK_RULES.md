@@ -367,7 +367,24 @@ Action B: slotIndex 1
 
 UI can display them as Red Pick 1 and Red Pick 2 for that phase, but the core should not assume display language.
 
-## 4.4 Current Phase
+## 4.4 Action Slot Label Presentation
+
+Operator UI and overlays must derive visible action labels from side, action type, and ordinal slot. Labels are presentation logic derived from generic draft actions/ruleset slots, not LoL-specific core behavior.
+
+Required label examples:
+
+```text
+BLUE BAN 1
+BLUE BAN 2
+RED BAN 1
+RED BAN 2
+BLUE PICK 1
+RED PICK 1
+```
+
+The UI must not hardcode repeated wrong labels. If the ruleset has phases with `count > 1`, the ordinal should still describe the visible slot order for that side and action type.
+
+## 4.5 Current Phase
 
 `currentPhaseIndex` points to the phase that contains the next incomplete action slot.
 
@@ -1319,9 +1336,10 @@ For v0.1, `/games/lol` may include:
 
 ```text
 adapter.ts
-sample champion data
+full practical static local champion data
 local or placeholder asset paths
 LoL-style sample ruleset
+pre-event/static Data Dragon import tooling for generated local metadata
 future TODO comments
 ```
 
@@ -1330,7 +1348,7 @@ For v0.1, `/games/lol` must not include active runtime implementation of:
 ```text
 LCU reader
 champion select auto-sync
-Data Dragon automatic sync
+active runtime Data Dragon sync
 LoL in-game HUD
 objective tracker
 post-game stats reader
@@ -1852,7 +1870,7 @@ Do not implement:
 ```text
 LoL LCU reader
 LoL champion select auto-sync
-LoL Data Dragon automatic sync
+LoL active runtime Data Dragon sync
 LoL in-game HUD
 observer-side objective tracker
 post-game stats reader

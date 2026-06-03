@@ -27,6 +27,18 @@ The following principles are release blockers. If any one of them is violated, v
 - [ ] No hidden competitive information is exposed.
 - [ ] Manual operation works without game APIs, internet access, OBS WebSocket, vMix API, or player-PC software.
 
+## Reference-Driven Implementation Acceptance
+
+Reference-driven implementation is part of v0.1 quality control.
+
+- [ ] `docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md` exists and is treated as the central policy for reference-driven work.
+- [ ] Public tools and official docs may be used for feature completeness, operator UX, asset pipeline shape, broadcast overlay hierarchy, and manual QA expectations.
+- [ ] Reference usage is summarized in the handoff when used.
+- [ ] No third-party source code, assets, exact proprietary layouts, branding, sponsor treatments, or trade dress are copied into this repo without explicit approval.
+- [ ] Data Dragon policy distinguishes allowed pre-event/static metadata or approved local icon preparation from forbidden show-time runtime dependency.
+- [ ] Fallback rendering is treated as a safety net, not the primary production UX.
+- [ ] Universal draft core remains game-agnostic even when LoL adapter data becomes richer.
+
 ## Verification Type Definitions
 
 Use these labels throughout this document.
@@ -418,9 +430,12 @@ Verify that game-specific data and rules live in adapters while universal core r
 - [ ] Each adapter provides asset URL lookup or safe fallback.
 - [ ] Each adapter declares capabilities.
 - [ ] Generic adapter has no API dependency.
-- [ ] LoL adapter uses manually included sample champion data only in v0.1.
+- [ ] LoL adapter exposes a full practical local LoL champion roster, not a 20-entry sample.
+- [ ] LoL adapter does not show Generic MOBA placeholder names in the LoL selector.
+- [ ] LoL adapter may use pre-event/static Data Dragon import tooling for generated local metadata and approved local icon preparation.
+- [ ] LoL adapter stores local icon path conventions, including `assets/hero-icons/lol/<ChampionDataId>.png`.
 - [ ] LoL adapter does not implement LCU reader in v0.1.
-- [ ] LoL adapter does not implement Data Dragon automatic sync in v0.1.
+- [ ] LoL adapter does not implement active runtime Data Dragon sync in v0.1 show operation.
 - [ ] LoL adapter does not implement in-game HUD in v0.1.
 - [ ] AOV adapter has manually maintained sample hero data.
 - [ ] HoK adapter has manually maintained sample hero data.
@@ -435,6 +450,7 @@ Verify that game-specific data and rules live in adapters while universal core r
 - [ ] Run adapter-loading unit tests.
 - [ ] Run tests that every adapter returns at least one hero and one ruleset.
 - [ ] Run typecheck to ensure adapters conform to `GameAdapter`.
+- [ ] Run tests proving LoL roster includes difficult champion names and aliases such as `Kai'Sa`, `Kha'Zix`, `Cho'Gath`, `Dr. Mundo`, `Nunu & Willump`, `Miss Fortune`, `Twisted Fate`, `Jarvan IV`, `Aurelion Sol`, `Wukong`, and `Renata Glasc`.
 - [ ] Search `/games/lol` to confirm any future-only files are stubbed/TODO only, not active LCU/Data Dragon/HUD implementation.
 - [ ] Search `packages/core-draft` and `packages/core-match` to confirm they do not import any game adapter directly.
 
@@ -444,7 +460,8 @@ Verify that game-specific data and rules live in adapters while universal core r
 - [ ] Select Generic MOBA game adapter.
 - [ ] Confirm hero pool changes.
 - [ ] Select LoL sample adapter.
-- [ ] Confirm sample champion pool appears manually.
+- [ ] Confirm full practical local LoL champion roster appears manually.
+- [ ] Confirm LoL search finds `Kai'Sa`, `Kha'Zix`, `Cho'Gath`, `Dr. Mundo`, `Nunu & Willump`, `Miss Fortune`, `Twisted Fate`, `Jarvan IV`, `Aurelion Sol`, `Wukong`, and `Renata Glasc`.
 - [ ] Select AOV sample adapter.
 - [ ] Confirm sample hero pool appears.
 - [ ] Select HoK sample adapter.
@@ -455,7 +472,7 @@ Verify that game-specific data and rules live in adapters while universal core r
 
 - Core draft depends on a specific game adapter.
 - LoL adapter becomes the default architecture for all games.
-- LoL LCU reader, Data Dragon automatic sync, or in-game HUD is implemented as v0.1 runtime feature.
+- LoL LCU reader, active runtime Data Dragon sync, or in-game HUD is implemented as v0.1 runtime feature.
 - Adapter failure crashes the whole server instead of reporting health/error state.
 
 ---
@@ -767,7 +784,13 @@ Verify that a draft operator can run a complete manual Ban/Pick workflow under l
 - [ ] Current team turn is obvious.
 - [ ] Timer is visible.
 - [ ] Hero search exists.
+- [ ] LoL draft operator uses the full practical local LoL roster, not a 20-item sample.
+- [ ] LoL search handles apostrophes, periods, ampersands, spaces, roman numerals, punctuation, case, and aliases.
+- [ ] LoL search finds `Kai'Sa`, `Kha'Zix`, `Cho'Gath`, `Dr. Mundo`, `Nunu & Willump`, `Miss Fortune`, `Twisted Fate`, `Jarvan IV`, `Aurelion Sol`, `Wukong`, and `Renata Glasc`.
 - [ ] Hero grid/list exists.
+- [ ] Champion cards show a local icon when local asset exists.
+- [ ] Full champion name is always visible.
+- [ ] Missing icons do not show browser broken-image icons.
 - [ ] Pick slots are visible.
 - [ ] Ban slots are visible.
 - [ ] Hover action is supported.
@@ -1008,6 +1031,13 @@ Verify that the draft overlay displays Ban/Pick state clearly for broadcast.
 - [ ] Sponsor slot displays if configured.
 - [ ] Theme config affects visual styling.
 - [ ] Missing hero icon shows fallback graphic.
+- [ ] Draft overlay is broadcast output, not dashboard/operator UI.
+- [ ] Full champion names remain visible when champion images are missing.
+- [ ] Initials-only fallback is never the sole on-air information for a locked or hovered champion.
+- [ ] Browser broken-image icons are not visible on-air.
+- [ ] Timer visibly counts down from authoritative state when draft is running.
+- [ ] Active side and current phase are visually clear.
+- [ ] LoL draft overlay follows reference-driven broadcast standards: transparent 1920x1080 canvas, bottom-anchored broadcast rail, blue side left, red side right, five pick cards per team, compact ban strip, and central timer/phase/active-side module.
 - [ ] Overlay updates after hover.
 - [ ] Overlay updates after lock.
 - [ ] Overlay updates after undo.
@@ -1023,10 +1053,13 @@ Verify that the draft overlay displays Ban/Pick state clearly for broadcast.
 - [ ] Run integration test that draft lock broadcasts and overlay receives update.
 - [ ] Run test for missing hero icon fallback if available.
 - [ ] Run visual snapshot/e2e test if available.
+- [ ] Run static or component checks proving missing image cases still render full champion names.
 
 ### Manual Rehearsal Check
 
 - [ ] Open draft overlay.
+- [ ] Capture or manually inspect a 1920x1080 OBS/vMix-style view for normal draft state.
+- [ ] Capture or manually inspect a 1920x1080 OBS/vMix-style view for missing champion icon state.
 - [ ] Start draft from operator panel.
 - [ ] Confirm phase/timer appear.
 - [ ] Hover hero and confirm overlay update.
@@ -1041,7 +1074,9 @@ Verify that the draft overlay displays Ban/Pick state clearly for broadcast.
 - Draft overlay cannot show both teams.
 - Draft overlay fails to update in real time.
 - Timer is missing or misleading.
+- Timer does not visibly count down when draft state is running.
 - Missing assets break overlay.
+- Missing champion art leaves only initials or a broken image as on-air information.
 - Draft overlay exposes controls or mutation endpoints.
 
 ---
@@ -1601,7 +1636,7 @@ The following must not be implemented as active v0.1 features:
 - [ ] No LoL LCU reader.
 - [ ] No LoL champion select auto-sync.
 - [ ] No LoL in-game HUD.
-- [ ] No LoL Data Dragon automatic sync.
+- [ ] No active runtime Data Dragon sync or mandatory show-time Data Dragon dependency.
 - [ ] No OBS WebSocket integration.
 - [ ] No vMix API integration.
 - [ ] No Bitfocus Companion integration.
@@ -1628,12 +1663,19 @@ Clean placeholder interfaces or TODO notes are acceptable only when:
 - [ ] They do not introduce runtime dependencies.
 - [ ] They do not contaminate universal core modules.
 
+Allowed static/reference work must not be blocked by over-broad wording:
+
+- [ ] Documentation may mention `Data Dragon`, `DataDragon`, and `Riot` when describing reference policy, forbidden runtime boundaries, or future scope.
+- [ ] `/games/lol` may contain pre-event/static Data Dragon import scripts and generated local champion metadata when runtime remains local-first.
+- [ ] Static guardrails distinguish docs/scripts/generated local data from forbidden runtime integrations.
+- [ ] Guardrails still fail Riot/LCU/DataDragon dependencies in universal core packages and active show-runtime paths where forbidden.
+
 ## Verification Method
 
 ### Automated Check
 
-- [ ] Search repository for `LCU`, `DataDragon`, `champion-select-reader`, `ingame-hud`, `OBSWebSocket`, `vMix`, `Companion`, `StreamDeck`, `sqlite`, `prisma`, and cloud provider SDKs.
-- [ ] Confirm any matches are documentation-only, future TODOs, or isolated non-runtime placeholders.
+- [ ] Search repository for `LCU`, `DataDragon`, `Data Dragon`, `Riot`, `champion-select-reader`, `ingame-hud`, `OBSWebSocket`, `vMix`, `Companion`, `StreamDeck`, `sqlite`, `prisma`, and cloud provider SDKs.
+- [ ] Confirm matches are allowed docs, pre-event/static LoL adapter scripts, generated local metadata, tests for guardrails, future TODOs, or isolated non-runtime placeholders.
 - [ ] Search core packages for game-specific imports.
 - [ ] Run tests proving manual workflow works without future integrations.
 
@@ -1776,6 +1818,6 @@ The task queue should:
 - [ ] Map each task to relevant acceptance criteria sections.
 - [ ] Define dependencies between tasks.
 - [ ] Mark which tasks are documentation-only, setup, core logic, server, UI, overlay, integration, tests, or rehearsal.
-- [ ] Keep LoL In-game HUD, LCU reader, Data Dragon automatic sync, OBS WebSocket, vMix, Companion, Stream Deck, SQLite, cloud sync, and player-side automation out of v0.1.
+- [ ] Keep LoL In-game HUD, LCU reader, active runtime Data Dragon sync, OBS WebSocket, vMix, Companion, Stream Deck, SQLite, cloud sync, and player-side automation out of v0.1.
 - [ ] Preserve local-first, manual-first, production-safe direction.
 - [ ] End with the next recommended handoff target after `docs/TASK_QUEUE.md`.

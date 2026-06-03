@@ -1,5 +1,11 @@
 # LoL Draft Overlay Design Research
 
+## Status Note
+
+This research document is now an implementation reference for LoL draft overlay UX. It should guide broadcast hierarchy, slot layout, fallback behavior, and visual QA expectations, not sit as background reading only.
+
+It does not authorize copying third-party code, assets, branding, exact layouts, sponsor treatments, screenshots, or trade dress.
+
 ## 1. Purpose
 
 This document is a research and design brief for redesigning the League of Legends draft overlay in the Multi-MOBA Esports Broadcast Toolkit v0.1.
@@ -242,7 +248,7 @@ Do not include these in the visual redesign:
 
 - LoL LCU reader.
 - LoL champion select auto-sync.
-- Data Dragon automatic sync.
+- Runtime Data Dragon automatic sync.
 - Runtime Riot API dependency.
 - LoL in-game HUD.
 - Live summoner spell, rune, objective, item, gold, XP, or player stat integration.

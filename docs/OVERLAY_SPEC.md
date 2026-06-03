@@ -86,6 +86,8 @@ The overlay layer must preserve these release-blocking rules:
 
 Overlay routes are program/preview/browser-source outputs.
 
+They must look and behave like broadcast output, not dashboard/operator UI. Normal overlay routes should prioritize program readability, stable composition, transparent browser-source behavior, and public-safe display over admin-style panels or internal labels.
+
 They may:
 
 ```text
@@ -152,7 +154,7 @@ cloud realtime services
 hosted sponsor assets
 game API calls
 LoL LCU
-Data Dragon automatic sync
+runtime Data Dragon sync
 OBS WebSocket
 vMix API
 ```
@@ -580,6 +582,39 @@ Rules:
 - Do not advance phase locally based on timer alone.
 - If disconnected, keep last known timer visually stale-safe or show disconnected marker in debug mode.
 - The server/core remains source of truth.
+
+## 5.5.1 LoL Draft Reference Visual Standard
+
+When rendering LoL draft data, the overlay should use the reference-driven design research as an implementation guide while keeping shared overlay logic reusable.
+
+Required LoL draft visual guidance:
+
+- Transparent 1920x1080 canvas.
+- Bottom-anchored broadcast rail.
+- Blue side on the left and red side on the right.
+- Five pick cards per team.
+- Compact ban strip.
+- Central timer, phase, and active-side module.
+- No debug text unless `?debug=1`.
+- Normal output should not resemble a dashboard or operator control panel.
+
+Fallback requirements:
+
+- If a champion image is missing or fails to load, the full champion name must still be readable.
+- No browser broken-image icons may appear on-air.
+- Initials-only fallback must not be the sole on-air content for hovered or locked champions.
+- Slot dimensions must stay stable when fallback content appears.
+
+Timer requirements:
+
+- The timer must visibly count down when draft state is running and authoritative timer data is available.
+- The overlay must not locally advance phases, auto-pick, auto-ban, or mutate state based on timer display.
+
+Visual QA requirements:
+
+- Perform screenshot or manual verification at 1920x1080 for normal draft state.
+- Perform screenshot or manual verification at 1920x1080 for missing champion image state.
+- Record whether QA was OBS, vMix, or browser-only.
 
 ## 5.6 Completed Draft State
 
@@ -1503,7 +1538,7 @@ If an image path resolves but fails to load:
 - Switch to fallback.
 - Record debug warning.
 - Keep layout size stable.
-- Do not show browser broken-image icon on-air if avoidable.
+- Do not show browser broken-image icon on-air.
 
 ---
 
@@ -2238,7 +2273,7 @@ Overlay implementation must not add these v0.1 features:
 ```text
 LoL LCU reader
 LoL champion select auto-sync
-LoL Data Dragon automatic sync
+LoL active runtime Data Dragon sync
 LoL in-game HUD
 objective tracker
 post-game stats from live game API

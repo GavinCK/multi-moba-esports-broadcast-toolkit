@@ -70,7 +70,7 @@ The event package format must preserve these release-blocking rules:
 - No hidden competitive information exposure.
 - Event package format must not become LoL-first.
 - Event package must not require internet, cloud services, CDN-hosted images, remote fonts, remote APIs, SQLite, Prisma, or user login.
-- Event package must not require LoL LCU, LoL champion select auto-sync, Data Dragon automatic sync, OBS WebSocket, vMix API, Companion, or Stream Deck.
+- Event package must not require LoL LCU, LoL champion select auto-sync, active runtime Data Dragon sync, OBS WebSocket, vMix API, Companion, or Stream Deck.
 
 ---
 
@@ -1362,9 +1362,25 @@ sponsors.json → sponsors[].logoUrl
 assets/hero-icons/<game-code>/<hero-id>.png
 ```
 
-Normally hero assets are adapter-owned. Event package hero icons are optional overrides/fallbacks.
+Normally hero assets are adapter-owned. Event package hero icons are optional overrides/fallbacks, and event packages may include approved local LoL champion icons.
 
-They must not require Data Dragon or remote game asset sync.
+Recommended LoL icon path:
+
+```text
+assets/hero-icons/lol/<ChampionDataId>.png
+```
+
+Examples:
+
+```text
+assets/hero-icons/lol/Aatrox.png
+assets/hero-icons/lol/MonkeyKing.png
+assets/hero-icons/lol/KSante.png
+```
+
+Data Dragon may be used before the event to prepare public LoL champion metadata and approved local icon packages. Show runtime must only read local package/assets; it must not download missing assets during show operation.
+
+Fallbacks remain required to prevent broken output, but fallback-only rendering is not the target production UX for LoL draft graphics.
 
 ### Backgrounds / Frames
 
@@ -1711,19 +1727,28 @@ It should not require live external game APIs.
 
 A LoL sample ruleset is allowed.
 
+Allowed in event packages:
+
+```text
+approved local LoL champion icons
+local icon paths such as assets/hero-icons/lol/<ChampionDataId>.png
+local generated/public champion metadata references where needed
+pre-event/static Data Dragon-derived asset preparation notes
+```
+
 Disallowed in event package:
 
 ```text
 LCU reader config
 champion-select auto-sync config
 Riot lockfile path
-Data Dragon auto-sync URL
+runtime Data Dragon auto-sync URL
 LoL in-game HUD binding
 summoner spell automation
 rune automation
 ```
 
-If a future LoL plugin needs these, it must live in a future plugin-specific document and must not contaminate the v0.1 event package contract.
+If a future LoL plugin needs active runtime integrations, it must live in a future plugin-specific document and must not contaminate the v0.1 event package contract.
 
 ---
 
@@ -2049,7 +2074,7 @@ SQLite / Prisma / database schema
 user login requirement
 LoL LCU reader config
 LoL champion select auto-sync
-LoL Data Dragon automatic sync
+LoL active runtime Data Dragon sync
 LoL in-game HUD config
 OBS WebSocket config
 vMix API config
@@ -2087,7 +2112,7 @@ Do not use real copyrighted production assets as required test assets.
 
 Do not pull assets from the internet.
 
-Do not call Data Dragon or any game API.
+Do not call Data Dragon or any game API during show runtime. If a future task explicitly scopes pre-event/static Data Dragon preparation, generated assets and metadata must be local before rehearsal and must not create a live dependency.
 
 ## 24.2 When Writing Validation Tests
 
@@ -2250,4 +2275,3 @@ Before marking event package-related work complete, confirm:
 - [ ] JSONL log entries are append-only and valid JSON per line.
 - [ ] Package remains multi-MOBA and not LoL-first.
 - [ ] No cloud, database, login, remote asset, LoL LCU, Data Dragon, OBS/vMix, or player-side automation dependency was added.
-

@@ -12,9 +12,11 @@ The current v0.1 implementation includes:
 - React Admin Dashboard app for Admin, Draft Operator, Producer, and Caster/read-only panels.
 - React Overlay app for OBS/vMix-compatible browser-source routes.
 - Local JSON sample event package with local assets and fallbacks.
-- Generic MOBA, LoL sample, AOV sample, and HoK sample adapter structure.
+- Generic MOBA, LoL static champion roster, AOV sample, and HoK sample adapter structure.
 
 The system is intended to run on a trusted private production LAN without requiring internet access during live show operation after dependencies are installed.
+
+The project is reference-driven but not copy-driven. Mature public tools, official OBS/vMix browser-source docs, and Riot Data Dragon public metadata conventions may inform feature completeness, operator UX, asset pipeline shape, and broadcast overlay quality. Do not copy third-party code, assets, exact layouts, branding, sponsor treatments, or trade dress into this repo without explicit approval.
 
 ## Current v0.1 Scope
 
@@ -23,7 +25,7 @@ v0.1 focuses on the reliable manual foundation:
 - pnpm monorepo.
 - Shared TypeScript contracts.
 - Core match, draft, and production packages.
-- Generic MOBA, LoL sample, AOV sample, and HoK sample adapters.
+- Generic MOBA, LoL static champion roster, AOV sample, and HoK sample adapters.
 - Local sample event package.
 - Local server runtime.
 - REST APIs.
@@ -57,7 +59,7 @@ These are out of scope for v0.1 and are not required for live operation:
 - Official game APIs.
 - Riot API.
 - LCU.
-- Data Dragon automatic sync.
+- Active runtime Data Dragon automatic sync.
 - Garena API.
 - Tencent API.
 - TiMi API.
@@ -70,6 +72,8 @@ These are out of scope for v0.1 and are not required for live operation:
 - Hidden competitive information display.
 
 Future integrations must preserve manual fallback and stay out of the universal draft core.
+
+Data Dragon is allowed for pre-event/static LoL metadata and approved local icon preparation. v0.1 live runtime must not require Riot API, LCU, Data Dragon CDN, or internet.
 
 ## Repository Layout
 
@@ -202,6 +206,8 @@ event-packages/sample-event
 
 It is a local JSON event package with sample event, match, team, player, sponsor, ruleset, theme, adapter, asset, and fallback data for local development and rehearsal.
 
+Fallbacks prevent broken show output, but they are not the expected production UX. A production LoL draft should use the full local champion roster, local approved champion icons when packaged, and full champion display names even when an icon is missing.
+
 The sample package logs folder contains a checked-in `.gitkeep`:
 
 ```text
@@ -249,6 +255,7 @@ Important accepted mutations are written to the local append-only JSONL audit lo
 ## Documentation
 
 - [Local LAN deployment and browser source guide](docs/deployment-guide.md)
+- [Reference-driven implementation policy](docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md)
 - [Operator guide](docs/operator-guide.md)
 - [Game adapter developer guide](docs/game-adapter-guide.md)
 - [Operator rehearsal checklist](docs/OPERATOR_REHEARSAL_CHECKLIST.md)
@@ -267,7 +274,7 @@ Important accepted mutations are written to the local append-only JSONL audit lo
 - TQ-131 is where full local manual rehearsal happens.
 - v0.1 has no auth/login and assumes a trusted production LAN.
 - v0.1 has no player-side automation or game-client sync.
-- Official game APIs, Riot API, LCU, Data Dragon automatic sync, Garena API, Tencent API, TiMi API, LoL in-game HUD, and objective tracking remain outside v0.1 live operation.
+- Official game APIs, Riot API, LCU, active runtime Data Dragon sync, Garena API, Tencent API, TiMi API, LoL in-game HUD, and objective tracking remain outside v0.1 live operation.
 
 ## Guardrails
 
@@ -279,4 +286,6 @@ For v0.1 live operation:
 - Dangerous actions such as reset, complete, Take, Clear, and Emergency must require confirmation where implemented.
 - Universal draft code must remain game-agnostic.
 - LoL-specific future plugin work must remain separate from the universal core.
+- Pre-event/static LoL metadata and approved local icon preparation are allowed; show runtime still must not require Data Dragon, Riot API, LCU, or internet.
+- Fallbacks are safety nets; production LoL draft output should use local icons and full names where prepared.
 - OBS WebSocket, vMix API, cloud sync, internet, external database, login/auth, official game APIs, player-PC software, auto-pick, and auto-ban are not required for v0.1.

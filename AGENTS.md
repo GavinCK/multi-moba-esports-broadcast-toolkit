@@ -18,6 +18,7 @@ Before starting any implementation task, read these documents in this order:
 2. `Multi-MOBA_Esports_Broadcast_Toolkit_Technical_Spec_v0.1.md`
 3. `IMPLEMENTATION_PROMPT_FOR_CODEX.md`
 4. Any task-specific document under `docs/`, such as:
+   - `docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md`
    - `docs/ACCEPTANCE_CRITERIA.md`
    - `docs/TASK_QUEUE.md`
    - `docs/BAN_PICK_RULES.md`
@@ -69,6 +70,22 @@ The system must support League of Legends, Arena of Valor, Honor of Kings, gener
 
 ---
 
+## Reference-Driven Implementation Policy
+
+Agents should use `docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md` as the central source for reference-driven work.
+
+Reference-driven implementation is encouraged for feature completeness, operator UX, asset pipeline shape, broadcast overlay hierarchy, and manual QA expectations. Project guardrails are risk controls, not quality ceilings.
+
+Agents may inspect mature public tools and official docs as references, including RCVolus/lol-pick-ban-ui, RCVolus/league-prod-toolkit, LeagueBroadcast-like public broadcast tooling as conceptual reference only, OBS/vMix browser-source docs, and Riot Data Dragon public documentation and asset conventions.
+
+Reference-driven does not mean copy-driven. Do not copy third-party source code, exact proprietary layouts, branding, sponsor treatments, trade dress, screenshots, or artwork into this repo without explicit approval. Reimplement proven concepts inside this project's own React / TypeScript / Node / Socket.IO architecture, and summarize reference usage in the handoff.
+
+Data Dragon is allowed and preferred as a pre-event/static import source for LoL public champion metadata and approved local icon preparation. The show runtime must remain local-first and must not require Data Dragon, Riot API, LCU, or internet access.
+
+Fallback rendering exists to prevent broken show output. It is not the expected production experience. Production LoL draft UX should use a full practical local LoL roster, clear search, local icons when packaged, full champion display names, and no broken-image or initials-only on-air fallback as the sole information.
+
+---
+
 ## Non-Negotiable Architectural Rules
 
 These rules must not be violated.
@@ -98,7 +115,9 @@ LoL System
 
 ### 2. LoL In-game HUD is a future plugin
 
-LoL-specific in-game HUD, champion select reader, Data Dragon sync, LCU integration, and observer-side data mapping must remain separate from the universal draft core.
+LoL-specific in-game HUD, champion select reader, active show-time Data Dragon sync, LCU integration, and observer-side data mapping must remain separate from the universal draft core.
+
+Allowed LoL adapter/event-package work includes pre-event/static Data Dragon import tooling, generated local champion metadata, approved local champion icons, and reference-driven design research when it does not create a runtime dependency or contaminate universal packages.
 
 LoL-specific implementation belongs only under:
 
@@ -149,7 +168,7 @@ v0.1 should build a reliable foundation, not every future feature.
 - Universal Manual Ban/Pick.
 - Game Adapter structure.
 - Generic MOBA adapter.
-- LoL sample adapter with manually included champion data sample.
+- LoL adapter with a practical local champion roster and static metadata suitable for manual draft rehearsal.
 - AOV sample adapter.
 - HoK sample adapter.
 - Admin Dashboard.
@@ -185,7 +204,7 @@ Do not implement these in v0.1 unless the user explicitly changes the scope:
 - LoL LCU reader.
 - LoL champion select auto sync.
 - LoL in-game HUD.
-- LoL Data Dragon automatic sync.
+- Active v0.1 runtime Data Dragon sync or any mandatory show-time Data Dragon dependency.
 - OBS WebSocket integration.
 - vMix API integration.
 - Bitfocus Companion integration.
@@ -200,6 +219,8 @@ Do not implement these in v0.1 unless the user explicitly changes the scope:
 - Player-side automation.
 
 Clean placeholder interfaces and specific TODO notes are allowed only when they preserve the architecture and do not expand v0.1 implementation scope.
+
+Pre-event/static Data Dragon import tooling, generated local LoL champion metadata, approved local champion icons, and reference-driven design research are allowed when they preserve local-first show runtime and remain outside universal core packages.
 
 ---
 
@@ -712,7 +733,7 @@ Do not:
 - Implement auto-pick or auto-ban.
 - Add LoL LCU reader in v0.1.
 - Add LoL in-game HUD in v0.1.
-- Add Data Dragon automatic sync in v0.1.
+- Add active show-time Data Dragon sync or any mandatory runtime Riot/Data Dragon dependency in v0.1.
 - Add OBS WebSocket, vMix, Bitfocus Companion, or Stream Deck integration in v0.1.
 - Add SQLite, cloud sync, or user login in v0.1 unless explicitly requested.
 - Delete user files or existing implementation without clear reason.
@@ -721,6 +742,7 @@ Do not:
 - Leave the project in a state where root commands are broken without reporting it.
 - Introduce internet dependency for live-show operation.
 - Place mutation controls inside overlay routes.
+- Treat fallback-only LoL champion rendering as the target production UX.
 - Use vague TODOs such as `fix later` or `improve this`.
 
 ---

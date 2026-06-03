@@ -1243,18 +1243,20 @@ Record hero count, ruleset ID, and adapter capabilities.
 
 ---
 
-## TQ-051 — Implement LoL Sample Adapter Without Future Runtime Features
+## TQ-051 — Implement LoL Static Roster Adapter Without Future Runtime Features
 
 **Task Type:** CODE-CORE
 
 **Purpose**
 
-Provide a LoL sample adapter for manual draft while keeping LCU, Data Dragon sync, and in-game HUD out of active v0.1 runtime.
+Provide a practical local LoL adapter for manual draft while keeping LCU, runtime Data Dragon sync, Riot API, and in-game HUD out of active v0.1 show runtime.
 
 **Scope**
 
 - Implement `games/lol` adapter.
-- Use manually included sample champion data only.
+- Use a full practical local LoL champion roster, not a tiny sample list.
+- Allow pre-event/static Data Dragon import tooling for generated local public metadata and approved local icon preparation.
+- Use local icon path conventions such as `assets/hero-icons/lol/<ChampionDataId>.png`.
 - Provide at least one LoL-style draft ruleset.
 - Provide asset lookup with safe local/fallback paths.
 - Add clear TODO comments for future v0.3 plugin features only if helpful.
@@ -1274,7 +1276,9 @@ docs/TASK_QUEUE.md
 
 ```text
 games/lol/adapter.ts
-games/lol/sample-champions.ts
+games/lol/src/data.ts
+games/lol/src/generated-champions.ts
+games/lol/scripts/**
 games/lol/assets/**
 games/lol/**/*.test.ts
 ```
@@ -1313,13 +1317,14 @@ Any match must be documentation-only or explicit future TODO, not active impleme
 **Manual Rehearsal Verification**
 
 ```text
-Not required yet. Future UI rehearsal should confirm LoL sample champion pool appears manually.
+Not required yet. Future UI rehearsal should confirm the full practical local LoL roster appears manually.
 ```
 
 **Out-of-Scope Guardrails**
 
 - Do not implement LCU reader.
-- Do not implement Data Dragon automatic sync.
+- Do not implement active runtime Data Dragon sync.
+- Do not require Riot API or internet during show runtime.
 - Do not implement LoL in-game HUD.
 - Do not import LoL adapter into universal core.
 
@@ -3482,6 +3487,457 @@ Record documented commands, URLs, and known limitations.
 
 ---
 
+# Phase 11.5 - Reference-Driven LoL Corrective Pass
+
+## DOC-REF-001 - Patch Reference-Driven Implementation Policy
+
+**Task Type:** DOCS-ONLY
+
+**Purpose**
+
+Make `docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md` the central policy for reference-driven implementation, Data Dragon static/pre-event boundaries, fallback UX expectations, and reference handoff notes.
+
+**Scope**
+
+- Create or update `docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md`.
+- Cross-link the policy from root/harness docs where needed.
+- Clarify that reference-driven implementation is encouraged but copy-driven implementation is forbidden.
+- Clarify that guardrails are risk controls, not quality ceilings.
+
+**Source Documents to Read**
+
+```text
+AGENTS.md
+IMPLEMENTATION_PROMPT_FOR_CODEX.md
+docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md
+docs/ACCEPTANCE_CRITERIA.md
+docs/TASK_QUEUE.md
+docs/design/LOL_DRAFT_OVERLAY_DESIGN_RESEARCH.md
+```
+
+**Files / Folders Likely Affected**
+
+```text
+AGENTS.md
+IMPLEMENTATION_PROMPT_FOR_CODEX.md
+README.md
+docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md
+docs/ACCEPTANCE_CRITERIA.md
+docs/TASK_QUEUE.md
+docs/OVERLAY_SPEC.md
+docs/EVENT_PACKAGE_SPEC.md
+docs/game-adapter-guide.md
+docs/BAN_PICK_RULES.md
+docs/design/LOL_DRAFT_OVERLAY_DESIGN_RESEARCH.md
+```
+
+**Dependencies**
+
+```text
+TQ-112
+```
+
+**Acceptance Criteria Link / Mapping**
+
+```text
+docs/ACCEPTANCE_CRITERIA.md#reference-driven-implementation-acceptance
+docs/ACCEPTANCE_CRITERIA.md#24-documentation
+docs/ACCEPTANCE_CRITERIA.md#26-out-of-scope-guardrails
+```
+
+**Automated Verification**
+
+```bash
+# If docs lint exists:
+pnpm lint:docs
+git diff --stat
+git diff -- AGENTS.md IMPLEMENTATION_PROMPT_FOR_CODEX.md docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md docs/ACCEPTANCE_CRITERIA.md docs/TASK_QUEUE.md docs/EVENT_PACKAGE_SPEC.md docs/OVERLAY_SPEC.md docs/game-adapter-guide.md docs/BAN_PICK_RULES.md README.md docs/design/LOL_DRAFT_OVERLAY_DESIGN_RESEARCH.md
+```
+
+If `pnpm lint:docs` does not exist, record it as unavailable.
+
+**Manual Rehearsal Verification**
+
+```text
+Documentation review only. No live rehearsal required.
+```
+
+**Out-of-Scope Guardrails**
+
+- Do not modify runtime code, tests, package files, lockfiles, generated data, event package JSON, or image assets.
+- Do not copy third-party code, assets, branding, screenshots, or exact layouts.
+- Do not weaken game-agnostic core, manual-first, local-first, or read-only overlay rules.
+
+**Handoff Notes**
+
+Record policy decisions, what is now allowed, what remains forbidden, references used, verification results, and whether any non-doc files were touched.
+
+## FIX-LOL-DATA-UI - Wire Full LoL Roster, Search, Icons, and Full-Name Fallback into Draft Operator
+
+**Task Type:** CODE-UI CODE-CORE TESTING
+
+**Purpose**
+
+Make the LoL manual draft operator usable for real rehearsal by wiring the full practical local LoL roster, robust search, local icon paths, and full-name fallback into the actual UI.
+
+**Scope**
+
+- Load the full practical LoL champion roster from `/games/lol`.
+- Ensure the Draft Operator Panel uses the actual LoL roster when the LoL adapter is selected.
+- Implement search normalization for apostrophes, periods, ampersands, spaces, roman numerals, punctuation, case, and aliases.
+- Render local icons when packaged and full champion names always.
+- Prevent browser broken-image icons and initials-only fallback as the sole useful information.
+
+**Source Documents to Read**
+
+```text
+AGENTS.md
+docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md
+IMPLEMENTATION_PROMPT_FOR_CODEX.md
+docs/ACCEPTANCE_CRITERIA.md
+docs/TASK_QUEUE.md
+docs/game-adapter-guide.md
+docs/BAN_PICK_RULES.md
+WORKING_HANDOFF_AFTER_REFERENCE_DRIVEN_HARNESS_POLICY.md
+WORKING_HANDOFF_AFTER_LOL_CHAMPION_DATA_IMAGE_PIPELINE.md
+```
+
+**Files / Folders Likely Affected**
+
+```text
+games/lol/**
+apps/admin-dashboard/**
+apps/server/**
+packages/game-adapters/**
+packages/shared-types/**
+tests/**
+```
+
+**Dependencies**
+
+```text
+DOC-REF-001
+TQ-051
+TQ-071
+TQ-082
+```
+
+**Acceptance Criteria Link / Mapping**
+
+```text
+docs/ACCEPTANCE_CRITERIA.md#6-game-adapter-layer
+docs/ACCEPTANCE_CRITERIA.md#12-draft-operator-panel
+docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md#lol-champion-selector-production-standard
+```
+
+**Automated Verification**
+
+```bash
+pnpm --filter @mmbt/game-lol-sample test
+pnpm --filter @mmbt/game-lol-sample typecheck
+pnpm --filter @mmbt/admin-dashboard test
+pnpm --filter @mmbt/admin-dashboard typecheck
+pnpm test
+pnpm typecheck
+pnpm build
+```
+
+Add or run tests that prove search finds:
+
+```text
+Kai'Sa
+Kha'Zix
+Cho'Gath
+Dr. Mundo
+Nunu & Willump
+Miss Fortune
+Twisted Fate
+Jarvan IV
+Aurelion Sol
+Wukong
+Renata Glasc
+```
+
+**Manual Rehearsal Verification**
+
+```text
+Open Draft Operator Panel.
+Select LoL adapter.
+Confirm full practical LoL roster is visible.
+Search the difficult champion-name list.
+Confirm local icons render where packaged.
+Confirm full names remain visible when icons are missing.
+Confirm no browser broken-image icon appears.
+Run several hover/lock actions manually.
+```
+
+**Out-of-Scope Guardrails**
+
+- Do not add LCU, Riot API, runtime Data Dragon sync, champion-select auto-sync, player-side automation, auto-pick, or auto-ban.
+- Do not put LoL champion names or Data Dragon assumptions in `packages/core-draft`.
+- Do not download assets during show runtime.
+
+**Handoff Notes**
+
+Record roster count, search behavior, icon path convention, fallback behavior, references used, commands run, manual smoke result, and any uncommitted LoL champion-data work preserved.
+
+## FIX-DRAFT-TIMER-LABELS - Fix Countdown Timer and Side/Action/Ordinal Slot Labels
+
+**Task Type:** CODE-UI CODE-OVERLAY TESTING
+
+**Purpose**
+
+Fix confusing draft UI labels and timer behavior so operators and viewers can clearly understand side, action type, ordinal slot, phase, and countdown state.
+
+**Scope**
+
+- Derive labels from side, action type, and ordinal slot.
+- Use labels such as `BLUE BAN 1`, `BLUE BAN 2`, `RED BAN 1`, `RED PICK 1`, and `BLUE PICK 1`.
+- Ensure timer visibly counts down from authoritative state where current architecture supports it.
+- Keep label logic as UI presentation derived from generic draft actions/rulesets, not LoL-specific core behavior.
+
+**Source Documents to Read**
+
+```text
+AGENTS.md
+docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md
+docs/BAN_PICK_RULES.md
+docs/API_SOCKET_CONTRACT.md
+docs/OVERLAY_SPEC.md
+docs/ACCEPTANCE_CRITERIA.md
+docs/TASK_QUEUE.md
+```
+
+**Files / Folders Likely Affected**
+
+```text
+apps/admin-dashboard/**
+apps/overlay/**
+apps/server/**
+packages/core-draft/**
+tests/**
+```
+
+**Dependencies**
+
+```text
+DOC-REF-001
+TQ-032
+TQ-074
+TQ-082
+TQ-091
+```
+
+**Acceptance Criteria Link / Mapping**
+
+```text
+docs/BAN_PICK_RULES.md#action-slot-label-presentation
+docs/ACCEPTANCE_CRITERIA.md#12-draft-operator-panel
+docs/ACCEPTANCE_CRITERIA.md#16-draft-overlay
+```
+
+**Automated Verification**
+
+```bash
+pnpm --filter @mmbt/admin-dashboard test
+pnpm --filter @mmbt/overlay test
+pnpm test
+pnpm typecheck
+pnpm build
+```
+
+**Manual Rehearsal Verification**
+
+```text
+Start a sample draft.
+Confirm side/action/ordinal labels are correct for bans and picks.
+Confirm timer counts down, pauses, resumes, and does not auto-pick or auto-ban.
+Confirm overlay and operator panel use consistent labels.
+```
+
+**Out-of-Scope Guardrails**
+
+- Do not hardcode LoL-specific label behavior in universal draft core.
+- Do not let timer expiry auto-pick, auto-ban, or auto-advance by itself.
+- Do not implement player-side or game-client automation.
+
+**Handoff Notes**
+
+Record label derivation rules, timer source of truth, tests updated, manual checks, and any remaining timer limitations.
+
+## FIX-LOL-OVERLAY-REFERENCE-DESIGN - Redesign LoL Draft Overlay Using Reference-Driven Broadcast Standards
+
+**Task Type:** CODE-OVERLAY TESTING
+
+**Purpose**
+
+Redesign the LoL draft overlay into a broadcast graphic that follows reference-driven standards while preserving read-only overlay behavior and game-agnostic core boundaries.
+
+**Scope**
+
+- Use `docs/design/LOL_DRAFT_OVERLAY_DESIGN_RESEARCH.md` as an implementation reference.
+- Build a transparent 1920x1080 bottom-anchored broadcast rail.
+- Place blue side left and red side right.
+- Show five pick cards per team and compact ban strips.
+- Put phase, timer, and active side in a central module.
+- Render full champion names when images are missing.
+- Avoid browser broken-image icons and initials-only fallback as sole on-air information.
+- Keep normal output free of debug text unless `?debug=1`.
+
+**Source Documents to Read**
+
+```text
+AGENTS.md
+docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md
+docs/OVERLAY_SPEC.md
+docs/BAN_PICK_RULES.md
+docs/design/LOL_DRAFT_OVERLAY_DESIGN_RESEARCH.md
+docs/ACCEPTANCE_CRITERIA.md
+docs/TASK_QUEUE.md
+```
+
+**Files / Folders Likely Affected**
+
+```text
+apps/overlay/src/overlays/**
+apps/overlay/src/components/**
+apps/overlay/src/routes/**
+apps/overlay/src/styles.css
+apps/overlay/**/*.test.*
+```
+
+**Dependencies**
+
+```text
+DOC-REF-001
+FIX-LOL-DATA-UI
+FIX-DRAFT-TIMER-LABELS
+TQ-091
+```
+
+**Acceptance Criteria Link / Mapping**
+
+```text
+docs/ACCEPTANCE_CRITERIA.md#16-draft-overlay
+docs/OVERLAY_SPEC.md#lol-draft-reference-visual-standard
+docs/design/LOL_DRAFT_OVERLAY_DESIGN_RESEARCH.md#12-acceptance-criteria-for-the-visual-redesign
+```
+
+**Automated Verification**
+
+```bash
+pnpm --filter @mmbt/overlay test
+pnpm --filter @mmbt/overlay typecheck
+pnpm --filter @mmbt/overlay build
+pnpm test
+pnpm typecheck
+pnpm build
+```
+
+Run Playwright or equivalent visual checks if available.
+
+**Manual Rehearsal Verification**
+
+```text
+Open /overlay/draft/:matchId at 1920x1080.
+Confirm transparent background and no scrollbars.
+Confirm blue left, red right, five picks per side, ban strips, central timer/phase/active side.
+Confirm normal route has no debug text.
+Confirm ?debug=1 shows public-safe diagnostics.
+Confirm missing champion art still shows full names and no broken images.
+```
+
+**Out-of-Scope Guardrails**
+
+- Do not copy third-party layouts, artwork, branding, sponsor treatments, screenshots, or code.
+- Do not add LCU, Riot API, runtime Data Dragon sync, LoL in-game HUD, auto-pick, or auto-ban.
+- Do not mutate state from overlay routes.
+
+**Handoff Notes**
+
+Record references used, visual design choices, screenshot/manual QA results, fallback behavior, commands run, and any visual limitations.
+
+## TEST-OBS-VMIX-VISUAL-QA - Perform Manual 1920x1080 Browser/OBS/vMix Visual QA
+
+**Task Type:** REHEARSAL TESTING
+
+**Purpose**
+
+Verify the draft overlay is actually usable as an OBS/vMix browser-source output at 1920x1080 for normal and missing-asset states.
+
+**Scope**
+
+- Test the overlay in a 1920x1080 browser-source-style viewport.
+- Use OBS/vMix when available; otherwise record browser-only visual QA honestly.
+- Verify normal draft state, hover state, locked state, completed state, debug mode, reconnect/refresh, and missing-asset fallback.
+- Record screenshots or detailed manual observations.
+
+**Source Documents to Read**
+
+```text
+AGENTS.md
+docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md
+docs/OVERLAY_SPEC.md
+docs/design/LOL_DRAFT_OVERLAY_DESIGN_RESEARCH.md
+docs/OPERATOR_REHEARSAL_CHECKLIST.md
+docs/ACCEPTANCE_CRITERIA.md
+docs/TASK_QUEUE.md
+```
+
+**Files / Folders Likely Affected**
+
+```text
+No source files unless the user explicitly asks to fix issues found during QA.
+Optional: WORKING_HANDOFF_AFTER_OBS_VMIX_VISUAL_QA.md
+```
+
+**Dependencies**
+
+```text
+FIX-LOL-OVERLAY-REFERENCE-DESIGN
+FIX-DRAFT-TIMER-LABELS
+TQ-130
+```
+
+**Acceptance Criteria Link / Mapping**
+
+```text
+docs/ACCEPTANCE_CRITERIA.md#16-draft-overlay
+docs/OVERLAY_SPEC.md#26-manual-rehearsal-verification-expectations
+docs/REFERENCE_DRIVEN_IMPLEMENTATION_POLICY.md#overlay-visual-qa-standard
+```
+
+**Automated Verification**
+
+```bash
+pnpm --filter @mmbt/overlay test
+pnpm --filter @mmbt/overlay typecheck
+pnpm --filter @mmbt/overlay build
+```
+
+If Playwright exists, run the relevant 1920x1080 overlay visual checks.
+
+**Manual Rehearsal Verification**
+
+```text
+Open normal draft overlay at 1920x1080.
+Open missing-asset case at 1920x1080.
+Confirm no scrollbars, no broken-image icons, readable full champion names, clear timer, clear phase, clear active side, and transparent background.
+Test OBS/vMix if available and record whether it was OBS, vMix, or browser-only.
+```
+
+**Out-of-Scope Guardrails**
+
+- Do not patch code during QA unless explicitly scoped.
+- Do not claim OBS/vMix passed if only browser QA was performed.
+- Do not hide visual failures.
+
+**Handoff Notes**
+
+Record exact URLs, viewport size, tool used, screenshots/manual observations, pass/fail items, and recommended follow-up fixes.
+
+---
+
 # Phase 12 — Testing, Scope Guardrails, and Rehearsal
 
 ## TQ-120 — Add Static Scope Guardrail Tests
@@ -4005,7 +4461,7 @@ TQ-032  Implement Draft Actions, Timer, Undo, and Duplicate Blocking
 TQ-040  Implement Core Production State Machine
 TQ-041  Implement Basic Theme Engine
 TQ-050  Implement Game Adapter Interface Loader and Generic MOBA Adapter
-TQ-051  Implement LoL Sample Adapter Without Future Runtime Features
+TQ-051  Implement LoL Static Roster Adapter Without Future Runtime Features
 TQ-052  Implement AOV and HoK Sample Adapters
 TQ-060  Create Sample Event Package Structure and JSON Files
 TQ-061  Add Sample Event Validation Tests
@@ -4029,6 +4485,11 @@ TQ-102  Document Local LAN Deployment and Browser Source URLs
 TQ-110  Create Operator Guide
 TQ-111  Create Game Adapter Developer Guide
 TQ-112  Update README with Local Run and v0.1 Scope
+DOC-REF-001  Patch Reference-Driven Implementation Policy
+FIX-LOL-DATA-UI  Wire Full LoL Roster, Search, Icons, and Full-Name Fallback into Draft Operator
+FIX-DRAFT-TIMER-LABELS  Fix Countdown Timer and Side/Action/Ordinal Slot Labels
+FIX-LOL-OVERLAY-REFERENCE-DESIGN  Redesign LoL Draft Overlay Using Reference-Driven Broadcast Standards
+TEST-OBS-VMIX-VISUAL-QA  Perform Manual 1920x1080 Browser/OBS/vMix Visual QA
 TQ-120  Add Static Scope Guardrail Tests
 TQ-121  Expand Unit and Integration Test Coverage
 TQ-130  Create Operator Rehearsal Checklist

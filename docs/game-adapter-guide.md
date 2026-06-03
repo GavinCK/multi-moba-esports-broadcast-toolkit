@@ -92,7 +92,7 @@ For v0.1, do not add active runtime systems for:
 
 - Official game API clients.
 - LoL LCU readers.
-- Data Dragon automatic sync.
+- Active runtime Data Dragon sync or show-time remote asset dependency.
 - Player PC software.
 - Game-client sync.
 - Hidden competitive data extraction.
@@ -114,7 +114,7 @@ Required approach:
 - Include `displayName`.
 - Include `localizedNames` only when local public data is available.
 - Include `roleTags` or class tags only when they are public, useful for operators, and not used as hidden competitive data.
-- Include local `iconUrl`, `splashUrl`, or `squareUrl` paths when available.
+- Include local `iconUrl`, `splashUrl`, or `squareUrl` paths when available, or explicit fallback metadata when artwork is intentionally not packaged.
 - Use adapter-level fallback behavior when an asset is missing.
 - Avoid remote CDN dependencies.
 - Avoid hidden, private, or player-client-only metadata.
@@ -122,6 +122,23 @@ Required approach:
 Keep IDs game-specific but still generic to the shared model. For example, a LoL sample champion can be represented as a `Hero` with `id: "lol-ahri"` and metadata marking it as a local static sample, while the universal draft core still sees only a generic hero ID.
 
 Hero data must not make the show depend on the internet, official game APIs, or private game-client state.
+
+### LoL Champion Data Standard
+
+The LoL adapter may be richer than the generic adapter.
+
+For usable v0.1 LoL draft rehearsal, the LoL adapter is expected to provide a full practical local champion roster, not a tiny sample list. It may use pre-event/static Data Dragon import tooling to generate local public champion metadata and approved local icon path conventions, as long as the live show runtime does not require Data Dragon, Riot API, LCU, or internet.
+
+Allowed LoL adapter data/workflow:
+
+- Generated local champion metadata.
+- Full champion display names.
+- Stable local IDs.
+- Data Dragon IDs for local asset mapping, such as `MonkeyKing` for Wukong.
+- Local icon path convention such as `assets/hero-icons/lol/<ChampionDataId>.png`.
+- Approved local icon packages prepared before rehearsal.
+
+LoL search normalization should handle apostrophes, periods, ampersands, spaces, roman numerals, punctuation, case, and aliases.
 
 ## 8. Ruleset Guidelines
 
@@ -164,7 +181,7 @@ Allowed examples:
 
 ```text
 assets/generic-moba/hero-icons/generic-vanguard.svg
-assets/lol-sample/champion-icons/lol-ahri.svg
+assets/hero-icons/lol/Ahri.png
 assets/aov-sample/fallbacks/hero-icon.svg
 assets/hok-sample/fallbacks/hero-square.svg
 ```
@@ -265,22 +282,24 @@ Universal packages must remain game-agnostic.
 
 `packages/shared-types` may contain generic types only. It may represent `Hero`, `DraftRuleset`, `GameAdapter`, and capability flags, but it must not contain LoL-only runtime contracts or game-client-specific payloads.
 
-## 13. Future LoL Plugin Boundary
+## 13. LoL Adapter and Future Plugin Boundary
 
-The v0.1 LoL adapter is sample/manual data only.
+The v0.1 LoL adapter is local/manual data only, but it should be practical enough for LoL draft rehearsal.
 
 Allowed in `games/lol` for v0.1:
 
-- Static local sample champion data.
+- Full practical static local champion roster.
+- Generated local champion metadata.
+- Pre-event/static Data Dragon import script for public metadata and approved local icon preparation.
 - LoL-style manual sample ruleset.
-- Local placeholder/fallback asset references.
+- Local placeholder/fallback asset references and local icon path conventions.
 - Adapter validation and tests.
 - Specific future-scope notes that do not run as v0.1 behavior.
 
 Future plugin scope only:
 
 - LCU reader.
-- Data Dragon sync.
+- Active runtime Data Dragon sync.
 - LoL in-game HUD.
 - Objective tracker.
 - Champion select mirroring.

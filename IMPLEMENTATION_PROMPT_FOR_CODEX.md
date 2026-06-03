@@ -124,6 +124,8 @@ Implement incrementally.
 
 Do not attempt to build every future feature at once.
 
+Use reference-driven implementation for feature completeness, operator UX, asset pipeline shape, broadcast overlay hierarchy, and manual QA expectations. Mature public tools and official docs may inform the work, but implementation must be re-created inside this project's own architecture.
+
 For every milestone:
 
 1. Make the smallest working version.
@@ -135,6 +137,8 @@ For every milestone:
 7. Do not introduce unnecessary external services.
 
 Prefer simple, inspectable, local-first implementation.
+
+Fallback rendering is a safety net for broken or missing assets, not the target production UX.
 
 Use JSON files and in-memory runtime state for v0.1.
 
@@ -474,10 +478,14 @@ Include:
 
 Include:
 
-- Sample champion list only.
-- Do not implement Data Dragon sync yet.
-- Do not implement LCU reader yet.
-- Add TODO notes for future plugin.
+- Full practical local LoL champion roster suitable for v0.1 manual draft rehearsal, not a tiny sample list.
+- Generated local champion metadata with stable IDs, display names, aliases, roles/classes where public, and local icon-path convention.
+- Optional pre-event/static Data Dragon import script for public champion metadata and approved local icon preparation.
+- Local icon convention such as `assets/hero-icons/lol/<ChampionDataId>.png`.
+- No runtime LCU reader.
+- No runtime Riot API dependency.
+- No active show-time Data Dragon dependency or automatic show-time sync.
+- Add TODO notes only for future plugin work that remains outside active v0.1 runtime.
 
 ## AOV Adapter
 
@@ -777,6 +785,10 @@ Safety:
 - A full draft can be run manually.
 - Draft state updates instantly.
 - Operator can search heroes.
+- LoL draft operation uses the full practical local LoL roster, not a 20-item sample.
+- LoL search handles difficult names and aliases such as `Kai'Sa`, `Kha'Zix`, `Cho'Gath`, `Dr. Mundo`, `Nunu & Willump`, `Miss Fortune`, `Twisted Fate`, `Jarvan IV`, `Aurelion Sol`, `Wukong`, and `Renata Glasc`.
+- Champion cards show a local icon when available and the full champion name always.
+- Missing icons never leave a browser broken-image icon or initials-only fallback as the sole useful information.
 - Current phase and timer are obvious.
 - Overlay updates through Socket.IO.
 
@@ -836,6 +848,24 @@ Transparent background
 1920x1080 layout
 ```
 
+LoL draft overlay presentation should be reference-driven and broadcast-facing, not dashboard/control UI:
+
+```text
+Transparent 1920x1080 canvas
+Bottom-anchored broadcast rail
+Blue side on the left
+Red side on the right
+Five pick cards per team
+Compact ban strip
+Central phase / timer / active-side module
+Useful full-name fallback when images are missing
+No browser broken-image icons
+No initials-only fallback as the sole on-air content
+Timer visibly counts down from authoritative state
+```
+
+The overlay must remain read-only and must not locally advance phases, mutate draft state, or perform Take/Clear/Emergency actions.
+
 ## Debug Mode
 
 Support query parameter:
@@ -857,8 +887,10 @@ Match ID
 
 - Overlay works as OBS browser source.
 - Transparent background works.
+- Draft overlay looks like broadcast output rather than an operator dashboard.
 - Overlay reconnects after server restart.
 - Draft updates in real time.
+- Timer visibly counts down when draft state is running.
 - Emergency overlay can be triggered.
 
 ---
@@ -1042,7 +1074,7 @@ Do not implement these yet:
 LoL LCU reader
 LoL champion select auto sync
 LoL in-game HUD
-LoL Data Dragon automatic sync
+Active runtime Data Dragon automatic sync during v0.1 show operation
 OBS WebSocket integration
 vMix API integration
 Bitfocus Companion integration
@@ -1055,6 +1087,8 @@ PNG export
 AI match report generation
 Real sponsor scheduling automation
 ```
+
+Pre-event/static Data Dragon import tooling, generated local LoL metadata, approved local LoL icon packages, and documentation for future optional sync tooling are allowed when show runtime remains local-first and does not require Data Dragon, Riot API, LCU, or internet.
 
 You may create clean placeholder interfaces or TODO files for future versions, but do not build these systems in v0.1.
 
@@ -1243,4 +1277,3 @@ A beautiful overlay that fails under pressure is not acceptable.
 A simple but reliable manual-first system is more valuable than an advanced API-dependent system.
 
 Build the foundation first.
-
