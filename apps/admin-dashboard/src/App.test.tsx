@@ -279,6 +279,8 @@ function createSnapshot(): DashboardRuntimeState {
         id: "team_blue",
         name: "Blue Meteors",
         shortName: "BLU",
+        logoUrl: "assets/team-logos/blue-meteors.svg",
+        logoAssetPath: "assets/team-logos/blue-meteors.svg",
         countryCode: "HK",
         primaryColor: "#2563eb",
         secondaryColor: "#93c5fd"
@@ -287,6 +289,8 @@ function createSnapshot(): DashboardRuntimeState {
         id: "team_red",
         name: "Red Titans",
         shortName: "RED",
+        logoUrl: "assets/team-logos/red-titans.svg",
+        logoAssetPath: "assets/team-logos/red-titans.svg",
         countryCode: "HK",
         primaryColor: "#dc2626",
         secondaryColor: "#fca5a5"
@@ -296,14 +300,19 @@ function createSnapshot(): DashboardRuntimeState {
       {
         id: "player_blue-top",
         teamId: "team_blue",
+        handle: "BlueAtlas",
         displayName: "BlueAtlas",
         role: "Top"
       },
       {
         id: "player_red-mid",
         teamId: "team_red",
+        handle: "RedSpark",
         displayName: "RedSpark",
-        role: "Mid"
+        role: "Mid",
+        metadata: {
+          status: "Active"
+        }
       }
     ],
     sponsors: [
@@ -567,6 +576,176 @@ function createReadyState(): DashboardClientState {
     health: snapshot.health,
     lastUpdatedAt: snapshot.timestamp
   };
+}
+
+function createReadOnlyPreviewApiClient(): {
+  apiClient: DashboardApiClient;
+  getCalls: string[];
+  postCalls: Array<{ path: string; body: Record<string, unknown> }>;
+  patchCalls: Array<{ path: string; body: Record<string, unknown> }>;
+} {
+  const getCalls: string[] = [];
+  const postCalls: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const patchCalls: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const apiClient: DashboardApiClient = {
+    async get<TData>(path: string): Promise<TData> {
+      getCalls.push(path);
+
+      return createSnapshot() as TData;
+    },
+    async post<TData>(path: string, body: Record<string, unknown>): Promise<TData> {
+      postCalls.push({ path, body });
+
+      throw new DashboardApiError({
+        code: "TEST_MUTATION_NOT_ALLOWED",
+        message: `Preview test should not POST ${path}.`
+      });
+    },
+    async patch<TData>(path: string, body: Record<string, unknown>): Promise<TData> {
+      patchCalls.push({ path, body });
+
+      throw new DashboardApiError({
+        code: "TEST_MUTATION_NOT_ALLOWED",
+        message: `Preview test should not PATCH ${path}.`
+      });
+    },
+    async getHealth() {
+      return createSnapshot().health;
+    },
+    async getState() {
+      return createSnapshot();
+    }
+  };
+
+  return { apiClient, getCalls, postCalls, patchCalls };
+}
+
+function createPlayerOrderPreviewState(options: {
+  includeOrder?: boolean;
+  includeUnresolvedPlayer?: boolean;
+} = {}): DashboardClientState {
+  const state = createReadyState();
+  const snapshot = state.snapshot;
+
+  if (!snapshot) {
+    throw new Error("Expected ready state snapshot.");
+  }
+
+  snapshot.players = [
+    {
+      id: "player_blue-top",
+      teamId: "team_blue",
+      handle: "BlueAtlas",
+      displayName: "Atlas Wong",
+      role: "Top",
+      nationality: "HK"
+    },
+    {
+      id: "player_blue-jungle",
+      teamId: "team_blue",
+      handle: "BluePath",
+      displayName: "Path Chan",
+      role: "Jungle",
+      nationality: "HK"
+    },
+    {
+      id: "player_blue-mid",
+      teamId: "team_blue",
+      handle: "BluePulse",
+      displayName: "Pulse Lee",
+      role: "Mid",
+      nationality: "HK"
+    },
+    {
+      id: "player_blue-bot",
+      teamId: "team_blue",
+      handle: "BlueArrow",
+      displayName: "Arrow Lam",
+      role: "Bot",
+      nationality: "HK"
+    },
+    {
+      id: "player_blue-support",
+      teamId: "team_blue",
+      handle: "BlueAnchor",
+      displayName: "Anchor Ho",
+      role: "Support",
+      nationality: "HK"
+    },
+    {
+      id: "player_red-top",
+      teamId: "team_red",
+      handle: "RedAegis",
+      displayName: "Aegis Ng",
+      role: "Top",
+      nationality: "HK"
+    },
+    {
+      id: "player_red-jungle",
+      teamId: "team_red",
+      handle: "RedTrail",
+      displayName: "Trail Lau",
+      role: "Jungle",
+      nationality: "HK"
+    },
+    {
+      id: "player_red-mid",
+      teamId: "team_red",
+      handle: "RedSpark",
+      displayName: "Spark Yu",
+      role: "Mid",
+      nationality: "HK"
+    },
+    {
+      id: "player_red-bot",
+      teamId: "team_red",
+      handle: "RedBolt",
+      displayName: "Bolt Chow",
+      role: "Bot",
+      nationality: "HK"
+    },
+    {
+      id: "player_red-support",
+      teamId: "team_red",
+      handle: "RedHarbor",
+      displayName: "Harbor Tsang",
+      role: "Support",
+      nationality: "HK"
+    }
+  ];
+
+  const orderMatch = snapshot.matches.find((match) => match.id === "match_aov-showcase");
+
+  if (orderMatch && options.includeOrder) {
+    orderMatch.presentation = {
+      matchLabel: orderMatch.title,
+      seriesFormat: "BO1",
+      gameNumber: 1,
+      scoreBySide: {
+        BLUE: orderMatch.score.blue,
+        RED: orderMatch.score.red
+      },
+      firstPickSide: "BLUE",
+      playerDisplayOrderBySide: {
+        BLUE: [
+          "player_blue-top",
+          options.includeUnresolvedPlayer ? "player_blue-missing" : "player_blue-jungle",
+          "player_blue-mid",
+          "player_blue-bot",
+          "player_blue-support"
+        ],
+        RED: [
+          "player_red-top",
+          "player_red-jungle",
+          "player_red-mid",
+          "player_red-bot",
+          "player_red-support"
+        ]
+      }
+    };
+  }
+
+  return state;
 }
 
 function createStateWithDraftStatus(status: "READY" | "LIVE" | "PAUSED" | "COMPLETE"): DashboardClientState {
@@ -1444,6 +1623,137 @@ describe("DashboardView", () => {
     const themes = renderDashboard(createReadyState(), { initialSection: "themes" });
     expect(themes.textContent).toContain("Default");
     expect(themes.textContent).toContain("Generic Standard");
+  });
+
+  it("renders Teams tab presentation fields with safe local logo preview and fallback", async () => {
+    const { apiClient, getCalls, postCalls, patchCalls } = createReadOnlyPreviewApiClient();
+    const container = renderDashboard(createReadyState(), {
+      apiClient,
+      initialSection: "teams"
+    });
+    const text = container.textContent ?? "";
+    const buttonText = Array.from(container.querySelectorAll("button"))
+      .map((button) => button.textContent?.trim())
+      .join(" ");
+    const firstPreview = container.querySelector<HTMLElement>(".team-logo-preview");
+    const firstPreviewImage = firstPreview?.querySelector<HTMLImageElement>("img[data-safe-local-image='candidate']");
+
+    expect(text).toContain("Team");
+    expect(text).toContain("Blue Meteors");
+    expect(text).toContain("team_blue");
+    expect(text).toContain("BLU");
+    expect(text).toContain("assets/team-logos/blue-meteors.svg");
+    expect(text).toContain("HK");
+    expect(text).toContain("Primary: #2563eb");
+    expect(text).toContain("Secondary: #93c5fd");
+    expect(firstPreview?.getAttribute("data-logo-preview")).toBe("local-asset");
+    expect(firstPreviewImage?.getAttribute("src")).toBe("/assets/team-logos/blue-meteors.svg");
+
+    await act(async () => {
+      firstPreviewImage?.dispatchEvent(new Event("error"));
+    });
+
+    expect(firstPreview?.querySelector("img[data-safe-local-image='candidate']")).toBeNull();
+    expect(firstPreview?.textContent).toContain("Logo preview fallback");
+    expect(buttonText).not.toMatch(/Save|Edit|Update|Create|Delete/u);
+    expect(getCalls).toHaveLength(0);
+    expect(postCalls).toHaveLength(0);
+    expect(patchCalls).toHaveLength(0);
+  });
+
+  it("renders Players tab handles, roles, team short names, IDs, and status without mutation controls", () => {
+    const { apiClient, getCalls, postCalls, patchCalls } = createReadOnlyPreviewApiClient();
+    const container = renderDashboard(createReadyState(), {
+      apiClient,
+      initialSection: "players"
+    });
+    const text = container.textContent ?? "";
+    const buttonText = Array.from(container.querySelectorAll("button"))
+      .map((button) => button.textContent?.trim())
+      .join(" ");
+
+    expect(text).toContain("BlueAtlas");
+    expect(text).toContain("player_blue-top");
+    expect(text).toContain("Top");
+    expect(text).toContain("BLU");
+    expect(text).toContain("team_blue");
+    expect(text).toContain("RedSpark");
+    expect(text).toContain("Mid");
+    expect(text).toContain("Active");
+    expect(buttonText).not.toMatch(/Save|Edit|Update|Create|Delete/u);
+    expect(getCalls).toHaveLength(0);
+    expect(postCalls).toHaveLength(0);
+    expect(patchCalls).toHaveLength(0);
+  });
+
+  it("renders BLUE and RED broadcast player order for the selected match", () => {
+    const { apiClient, postCalls, patchCalls } = createReadOnlyPreviewApiClient();
+    const container = renderDashboard(createPlayerOrderPreviewState({ includeOrder: true }), {
+      apiClient,
+      initialSection: "players"
+    });
+    const matchSelector = container.querySelector<HTMLSelectElement>(".match-view-selector select");
+
+    expect(container.textContent).toContain("No broadcast player order configured for this match.");
+
+    act(() => {
+      setSelectValue(matchSelector ?? undefined, "match_aov-showcase");
+    });
+
+    const text = container.textContent ?? "";
+
+    expect(container.querySelectorAll(".broadcast-order-row")).toHaveLength(10);
+    expect(text).toContain("Broadcast Player Order");
+    expect(text).toContain("BLUE side");
+    expect(text).toContain("RED side");
+    expect(text).toContain("BlueAtlas");
+    expect(text).toContain("Atlas Wong");
+    expect(text).toContain("Top");
+    expect(text).toContain("BLU");
+    expect(text).toContain("player_blue-top");
+    expect(text).toContain("RedHarbor");
+    expect(text).toContain("Harbor Tsang");
+    expect(text).toContain("Support");
+    expect(text).toContain("RED");
+    expect(text).toContain("player_red-support");
+    expect(postCalls).toHaveLength(0);
+    expect(patchCalls).toHaveLength(0);
+  });
+
+  it("shows broadcast player order fallback and unresolved player IDs safely", () => {
+    const missingOrder = renderDashboard(createPlayerOrderPreviewState(), {
+      apiClient: createReadOnlyPreviewApiClient().apiClient,
+      initialSection: "players",
+      initialSelectedMatchId: "match_aov-showcase"
+    });
+
+    expect(missingOrder.textContent).toContain("No broadcast player order configured for this match.");
+
+    act(() => {
+      mountedRoot?.unmount();
+    });
+    mountedContainer?.remove();
+    mountedRoot = null;
+    mountedContainer = null;
+
+    const { apiClient, postCalls, patchCalls } = createReadOnlyPreviewApiClient();
+    const unresolved = renderDashboard(
+      createPlayerOrderPreviewState({
+        includeOrder: true,
+        includeUnresolvedPlayer: true
+      }),
+      {
+        apiClient,
+        initialSection: "players",
+        initialSelectedMatchId: "match_aov-showcase"
+      }
+    );
+    const text = unresolved.textContent ?? "";
+
+    expect(text).toContain("player_blue-missing");
+    expect(text).toContain("Unresolved player ID");
+    expect(postCalls).toHaveLength(0);
+    expect(patchCalls).toHaveLength(0);
   });
 
   it("renders system health with safe client, audit, adapter, asset, and emergency details", () => {

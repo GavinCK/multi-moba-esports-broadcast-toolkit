@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Player, Sponsor, Team } from "@mmbt/shared-types";
+import type { MatchPresentationMetadata, Player, Sponsor, Team } from "@mmbt/shared-types";
 
 import { createDashboardApiClient, type DashboardApiClient } from "./client/apiClient";
 import type {
@@ -12,6 +12,7 @@ import type {
   DashboardValidationWarning
 } from "./client/types";
 import { CasterPanel } from "./caster/CasterPanel";
+import { SafeLocalImage } from "./components/SafeLocalImage";
 import { DraftOperatorPanel } from "./draft/DraftOperatorPanel";
 import { useDisplayedDraftTimer } from "./draft/useDisplayedDraftTimer";
 import { ProducerPanel } from "./producer/ProducerPanel";
@@ -215,6 +216,67 @@ function formatSafeHealthDetail(value: string | null | undefined, fallback = "No
 
 function formatList(values: string[] | undefined): string {
   return values && values.length > 0 ? values.join(", ") : "Not reported";
+}
+
+function formatOptionalText(value: string | null | undefined, fallback = "Not set"): string {
+  const trimmed = value?.trim();
+
+  return trimmed && trimmed.length > 0 ? trimmed : fallback;
+}
+
+function isSafeLocalAssetPath(value: string | null | undefined): value is string {
+  const trimmed = value?.trim();
+
+  return Boolean(
+    trimmed &&
+      trimmed.length > 0 &&
+      !/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed) &&
+      !trimmed.startsWith("//") &&
+      !trimmed.includes("\\") &&
+      !trimmed.includes("..")
+  );
+}
+
+function toBrowserLocalAssetPath(value: string | null | undefined): string | null {
+  if (!isSafeLocalAssetPath(value)) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+function getTeamLogoAssetPath(team: Team): string | null {
+  return team.logoAssetPath ?? team.logoUrl ?? null;
+}
+
+function formatTeamShortName(team: Team | null, unresolvedTeamId?: string): string {
+  if (!team) {
+    return unresolvedTeamId ? `Unresolved team: ${unresolvedTeamId}` : "Unknown team";
+  }
+
+  return formatOptionalText(team.shortName, formatOptionalText(team.name, team.id));
+}
+
+function formatPlayerHandle(player: Player): string {
+  return formatOptionalText(player.handle, formatOptionalText(player.displayName, player.id));
+}
+
+function formatPlayerStatus(player: Player): string {
+  const status = player.metadata?.status;
+
+  if (typeof status === "string" && status.trim().length > 0) {
+    return status.trim();
+  }
+
+  const active = player.metadata?.active;
+
+  if (typeof active === "boolean") {
+    return active ? "Active" : "Inactive";
+  }
+
+  return "Not set";
 }
 
 function DashboardNav(props: {
@@ -730,6 +792,49 @@ function MatchSetupPanel(props: {
   );
 }
 
+function TeamLogoPreview(props: { team: Team }): ReactNode {
+  const logoAssetPath = getTeamLogoAssetPath(props.team);
+  const previewSource = toBrowserLocalAssetPath(logoAssetPath);
+
+  return (
+    <div className="team-logo-preview" data-logo-preview={previewSource ? "local-asset" : "fallback"}>
+      <span className="team-logo-preview__fallback">
+        {logoAssetPath ? "Logo preview fallback" : "No local preview"}
+      </span>
+      {previewSource ? (
+        <SafeLocalImage
+          src={previewSource}
+          alt={`${props.team.name} logo preview`}
+          className="team-logo-preview__image"
+          decorative={false}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function TeamColorValue(props: { label: string; value: string | undefined; fallbackColor: string }): ReactNode {
+  const colorValue = formatOptionalText(props.value);
+
+  return (
+    <span className="team-color-value">
+      <span className="color-chip" style={{ backgroundColor: props.value ?? props.fallbackColor }} />
+      <span>
+        {props.label}: {colorValue}
+      </span>
+    </span>
+  );
+}
+
+function TeamColorPreview(props: { team: Team }): ReactNode {
+  return (
+    <div className="team-color-stack">
+      <TeamColorValue label="Primary" value={props.team.primaryColor} fallbackColor="#e5e7eb" />
+      <TeamColorValue label="Secondary" value={props.team.secondaryColor} fallbackColor="#cbd5e1" />
+    </div>
+  );
+}
+
 function TeamsPanel(props: { snapshot: DashboardRuntimeState | null }): ReactNode {
   const snapshot = props.snapshot;
 
@@ -744,6 +849,8 @@ function TeamsPanel(props: { snapshot: DashboardRuntimeState | null }): ReactNod
               <tr>
                 <th>Team</th>
                 <th>Short name</th>
+                <th>Logo preview</th>
+                <th>Logo asset path</th>
                 <th>Players</th>
                 <th>Country</th>
                 <th>Colors</th>
@@ -757,11 +864,14 @@ function TeamsPanel(props: { snapshot: DashboardRuntimeState | null }): ReactNod
                     <span className="subtle-id">{team.id}</span>
                   </td>
                   <td>{team.shortName}</td>
+                  <td>
+                    <TeamLogoPreview team={team} />
+                  </td>
+                  <td>{formatOptionalText(getTeamLogoAssetPath(team))}</td>
                   <td>{getPlayersForTeam(snapshot, team.id).length}</td>
                   <td>{team.countryCode ?? "Not set"}</td>
                   <td>
-                    <span className="color-chip" style={{ backgroundColor: team.primaryColor ?? "#e5e7eb" }} />
-                    <span className="color-chip" style={{ backgroundColor: team.secondaryColor ?? "#cbd5e1" }} />
+                    <TeamColorPreview team={team} />
                   </td>
                 </tr>
               ))}
@@ -773,41 +883,186 @@ function TeamsPanel(props: { snapshot: DashboardRuntimeState | null }): ReactNod
   );
 }
 
-function PlayersPanel(props: { snapshot: DashboardRuntimeState | null }): ReactNode {
-  const snapshot = props.snapshot;
+const BROADCAST_PLAYER_ORDER_SIDES = ["BLUE", "RED"] as const;
+type BroadcastPlayerOrderSide = (typeof BROADCAST_PLAYER_ORDER_SIDES)[number];
+
+function getBroadcastOrder(
+  presentation: MatchPresentationMetadata | undefined,
+  side: BroadcastPlayerOrderSide
+): string[] {
+  return presentation?.playerDisplayOrderBySide?.[side] ?? [];
+}
+
+function hasBroadcastOrder(presentation: MatchPresentationMetadata | undefined): boolean {
+  return BROADCAST_PLAYER_ORDER_SIDES.some((side) => getBroadcastOrder(presentation, side).length > 0);
+}
+
+function findPlayer(snapshot: DashboardRuntimeState, playerId: string): Player | null {
+  return snapshot.players.find((player) => player.id === playerId) ?? null;
+}
+
+function BroadcastPlayerOrderRow(props: {
+  snapshot: DashboardRuntimeState;
+  playerId: string;
+  orderNumber: number;
+}): ReactNode {
+  const player = findPlayer(props.snapshot, props.playerId);
+  const team = findTeam(props.snapshot, player?.teamId);
+  const playerLabel = player ? formatPlayerHandle(player) : props.playerId;
+  const displayName = player ? formatOptionalText(player.displayName, player.id) : "Unresolved player ID";
+  const role = player?.role ?? "Role not set";
+  const teamLabel = player ? formatTeamShortName(team, player.teamId) : "Unknown team";
 
   return (
-    <Section title="Players">
-      {!snapshot || snapshot.players.length === 0 ? (
-        <p className="empty-state">No players are available from the loaded package.</p>
+    <li className="broadcast-order-row">
+      <span className="broadcast-order-number">{props.orderNumber}</span>
+      <span className="broadcast-order-copy">
+        <strong>{playerLabel}</strong>
+        <span>{displayName}</span>
+      </span>
+      <span className="broadcast-order-meta">{role}</span>
+      <span className="broadcast-order-meta">{teamLabel}</span>
+      <span className="broadcast-order-meta">{props.playerId}</span>
+    </li>
+  );
+}
+
+function BroadcastPlayerOrderSideCard(props: {
+  snapshot: DashboardRuntimeState;
+  side: BroadcastPlayerOrderSide;
+  playerIds: string[];
+}): ReactNode {
+  return (
+    <article className="summary-card broadcast-order-card">
+      <h3>{props.side} side</h3>
+      {props.playerIds.length === 0 ? (
+        <p className="empty-state">No player order configured for this side.</p>
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Player</th>
-                <th>Team</th>
-                <th>Role</th>
-                <th>Nationality</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshot.players.map((player) => (
-                <tr key={player.id}>
-                  <td>
-                    <strong>{player.displayName}</strong>
-                    <span className="subtle-id">{player.id}</span>
-                  </td>
-                  <td>{formatTeamName(findTeam(snapshot, player.teamId))}</td>
-                  <td>{player.role ?? "Not set"}</td>
-                  <td>{player.nationality ?? "Not set"}</td>
-                </tr>
+        <ol className="broadcast-order-list">
+          {props.playerIds.map((playerId, index) => (
+            <BroadcastPlayerOrderRow
+              key={`${props.side}-${playerId}-${index}`}
+              snapshot={props.snapshot}
+              playerId={playerId}
+              orderNumber={index + 1}
+            />
+          ))}
+        </ol>
+      )}
+    </article>
+  );
+}
+
+function BroadcastPlayerOrderPreview(props: {
+  snapshot: DashboardRuntimeState;
+  selectedMatchId: string | null;
+  onSelectMatch(matchId: string): void;
+}): ReactNode {
+  const selectedMatch = getSelectedMatch(props.snapshot, props.selectedMatchId);
+  const presentation = selectedMatch?.presentation;
+
+  return (
+    <Section title="Broadcast Player Order">
+      {props.snapshot.matches.length === 0 ? (
+        <p className="empty-state">No matches are available for player order preview.</p>
+      ) : (
+        <div className="stack">
+          <label className="field-label field-label--narrow match-view-selector">
+            Match
+            <select
+              value={selectedMatch?.id ?? ""}
+              onChange={(event) => props.onSelectMatch(event.currentTarget.value)}
+            >
+              {props.snapshot.matches.map((match) => (
+                <option key={match.id} value={match.id}>
+                  {match.title} ({match.id})
+                </option>
               ))}
-            </tbody>
-          </table>
+            </select>
+          </label>
+
+          {!selectedMatch ? (
+            <p className="empty-state">No match is selected for broadcast player order preview.</p>
+          ) : !hasBroadcastOrder(presentation) ? (
+            <p className="empty-state">No broadcast player order configured for this match.</p>
+          ) : (
+            <div className="card-grid card-grid--two broadcast-order-grid">
+              {BROADCAST_PLAYER_ORDER_SIDES.map((side) => (
+                <BroadcastPlayerOrderSideCard
+                  key={side}
+                  snapshot={props.snapshot}
+                  side={side}
+                  playerIds={getBroadcastOrder(presentation, side)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </Section>
+  );
+}
+
+function PlayersPanel(props: {
+  snapshot: DashboardRuntimeState | null;
+  selectedMatchId: string | null;
+  onSelectMatch(matchId: string): void;
+}): ReactNode {
+  const snapshot = props.snapshot;
+
+  return (
+    <div className="stack">
+      <Section title="Players">
+        {!snapshot || snapshot.players.length === 0 ? (
+          <p className="empty-state">No players are available from the loaded package.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Player</th>
+                  <th>Handle</th>
+                  <th>Team</th>
+                  <th>Role</th>
+                  <th>Country</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {snapshot.players.map((player) => {
+                  const team = findTeam(snapshot, player.teamId);
+
+                  return (
+                    <tr key={player.id}>
+                      <td>
+                        <strong>{player.displayName}</strong>
+                        <span className="subtle-id">{player.id}</span>
+                      </td>
+                      <td>{formatPlayerHandle(player)}</td>
+                      <td>
+                        <strong>{formatTeamShortName(team, player.teamId)}</strong>
+                        <span className="subtle-id">{player.teamId}</span>
+                      </td>
+                      <td>{player.role ?? "Not set"}</td>
+                      <td>{player.nationality ?? "Not set"}</td>
+                      <td>{formatPlayerStatus(player)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      {snapshot ? (
+        <BroadcastPlayerOrderPreview
+          snapshot={snapshot}
+          selectedMatchId={props.selectedMatchId}
+          onSelectMatch={props.onSelectMatch}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -1221,7 +1476,13 @@ export function DashboardView(props: DashboardViewProps): ReactNode {
       case "teams":
         return <TeamsPanel snapshot={snapshot} />;
       case "players":
-        return <PlayersPanel snapshot={snapshot} />;
+        return (
+          <PlayersPanel
+            snapshot={snapshot}
+            selectedMatchId={selectedMatch?.id ?? selectedMatchId}
+            onSelectMatch={setSelectedMatchId}
+          />
+        );
       case "sponsors":
         return <SponsorsPanel snapshot={snapshot} />;
       case "themes":

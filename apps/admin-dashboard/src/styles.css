@@ -416,6 +416,107 @@ th {
   vertical-align: middle;
 }
 
+.team-logo-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  overflow: hidden;
+  border: 1px solid #c9d3df;
+  border-radius: 8px;
+  background: #eef2f7;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.team-logo-preview__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #ffffff;
+  padding: 5px;
+}
+
+.team-logo-preview__fallback {
+  padding: 4px;
+}
+
+.team-color-stack {
+  display: grid;
+  gap: 6px;
+}
+
+.team-color-value {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.match-view-selector {
+  margin-bottom: 0;
+}
+
+.broadcast-order-card {
+  min-height: 210px;
+}
+
+.broadcast-order-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.broadcast-order-row {
+  display: grid;
+  align-items: start;
+  gap: 8px;
+  grid-template-columns: 28px minmax(120px, 1.2fr) minmax(76px, 0.7fr) minmax(100px, 0.8fr) minmax(120px, 1fr);
+  border-top: 1px solid #e5e7eb;
+  padding-top: 8px;
+}
+
+.broadcast-order-number {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #155e75;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.broadcast-order-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.broadcast-order-copy strong,
+.broadcast-order-copy span,
+.broadcast-order-meta {
+  overflow-wrap: anywhere;
+}
+
+.broadcast-order-copy span,
+.broadcast-order-meta {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .operator-status-row,
 .operator-controls {
   display: flex;
@@ -813,5 +914,13 @@ th {
   .detail-list li span,
   .warning-panel li span {
     text-align: left;
+  }
+
+  .broadcast-order-row {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .broadcast-order-meta {
+    grid-column: 2;
   }
 }
