@@ -186,6 +186,19 @@ async function requestJson(
   };
 }
 
+async function requestRaw(
+  baseUrl: string,
+  pathname: string
+): Promise<{ status: number; contentType: string | null; bytes: Uint8Array }> {
+  const response = await fetch(`${baseUrl}${pathname}`);
+
+  return {
+    status: response.status,
+    contentType: response.headers.get("content-type"),
+    bytes: new Uint8Array(await response.arrayBuffer())
+  };
+}
+
 function createTempEventPackage(prefix = "mmbt-draft-api-"): string {
   const tempPackagePath = mkdtempSync(join(tmpdir(), prefix));
 
@@ -641,6 +654,42 @@ describe("server runtime foundation", () => {
         code: "ADAPTER_NOT_LOADED"
       }
     });
+  });
+
+  it("serves local event package assets and rejects missing or unsafe asset paths", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-assets-");
+    const iconPath = join(tempPackagePath, "assets", "hero-icons", "lol", "Kaisa.png");
+
+    try {
+      mkdirSync(join(tempPackagePath, "assets", "hero-icons", "lol"), { recursive: true });
+      writeFileSync(iconPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const icon = await requestRaw(baseUrl, "/assets/hero-icons/lol/Kaisa.png");
+        const missing = await requestJson(baseUrl, "/assets/hero-icons/lol/Missing.png");
+        const traversal = await requestJson(baseUrl, "/assets/%2e%2e%5cevent.json");
+
+        expect(icon.status).toBe(200);
+        expect(icon.contentType).toContain("image/png");
+        expect(Array.from(icon.bytes)).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+        expect(missing.status).toBe(404);
+        expect(missing.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "ASSET_NOT_FOUND"
+          }
+        });
+        expect(traversal.status).toBe(400);
+        expect(traversal.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "ASSET_PATH_UNSAFE"
+          }
+        });
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
   });
 
   it("returns a public-safe read-only state snapshot with adapter status", async () => {

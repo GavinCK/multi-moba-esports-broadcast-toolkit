@@ -1,4 +1,6 @@
+import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { extname, isAbsolute, relative, resolve } from "node:path";
 
 import {
   completeDraft,
@@ -80,6 +82,17 @@ const UNSAFE_PRODUCTION_PAYLOAD_KEY_PATTERN = new RegExp(
   "i"
 );
 const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
+const ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = {
+  ".avif": "image/avif",
+  ".gif": "image/gif",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".svg": "image/svg+xml; charset=utf-8",
+  ".webp": "image/webp",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2"
+};
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
@@ -92,6 +105,22 @@ function notFound(response: ServerResponse): void {
     code: "ROUTE_NOT_FOUND",
     message: "API route not found.",
     httpStatus: 404
+  });
+}
+
+function assetNotFound(response: ServerResponse): void {
+  sendError(response, {
+    code: "ASSET_NOT_FOUND",
+    message: "Local event package asset was not found.",
+    httpStatus: 404
+  });
+}
+
+function unsafeAssetPath(response: ServerResponse): void {
+  sendError(response, {
+    code: "ASSET_PATH_UNSAFE",
+    message: "Local event package asset path must stay inside the assets folder.",
+    httpStatus: 400
   });
 }
 
@@ -141,6 +170,70 @@ function getPathParts(pathname: string): string[] {
     .split("/")
     .filter((part) => part.length > 0)
     .map((part) => decodeURIComponent(part));
+}
+
+function isInsideDirectory(root: string, candidate: string): boolean {
+  const offset = relative(root, candidate);
+
+  return offset.length === 0 || (!offset.startsWith("..") && !isAbsolute(offset));
+}
+
+function isSafeAssetPathPart(part: string): boolean {
+  return (
+    part.length > 0 &&
+    part !== "." &&
+    part !== ".." &&
+    !part.includes("/") &&
+    !part.includes("\\") &&
+    !part.includes(":") &&
+    !part.includes("\0")
+  );
+}
+
+function getAssetContentType(absolutePath: string): string {
+  return ASSET_CONTENT_TYPES[extname(absolutePath).toLocaleLowerCase()] ?? "application/octet-stream";
+}
+
+function handleAssetGet(
+  response: ServerResponse,
+  runtimeState: ServerRuntimeState,
+  pathParts: string[]
+): void {
+  if (pathParts[0] !== "assets" || pathParts.length < 2) {
+    assetNotFound(response);
+    return;
+  }
+
+  if (!pathParts.every(isSafeAssetPathPart)) {
+    unsafeAssetPath(response);
+    return;
+  }
+
+  const assetRoot = resolve(runtimeState.eventPackageRoot, "assets");
+  const absolutePath = resolve(assetRoot, ...pathParts.slice(1));
+
+  if (!isInsideDirectory(assetRoot, absolutePath)) {
+    unsafeAssetPath(response);
+    return;
+  }
+
+  if (!existsSync(absolutePath)) {
+    assetNotFound(response);
+    return;
+  }
+
+  const details = statSync(absolutePath);
+
+  if (!details.isFile()) {
+    assetNotFound(response);
+    return;
+  }
+
+  response.statusCode = 200;
+  response.setHeader("Content-Type", getAssetContentType(absolutePath));
+  response.setHeader("Content-Length", String(details.size));
+  response.setHeader("Cache-Control", "no-store");
+  createReadStream(absolutePath).pipe(response);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1806,6 +1899,11 @@ export async function handleApiRequest(
   const requestUrl = new URL(request.url ?? "/", "http:" + "//localhost");
   const pathname = requestUrl.pathname;
   const pathParts = getPathParts(pathname);
+
+  if (request.method === "GET" && pathParts[0] === "assets") {
+    handleAssetGet(response, runtimeState, pathParts);
+    return;
+  }
 
   if (request.method === "POST" && pathParts[0] === "api" && pathParts[1] === "drafts") {
     if (!runtimeState.eventPackageLoadResult.ok) {

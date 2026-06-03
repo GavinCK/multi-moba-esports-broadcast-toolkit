@@ -9,6 +9,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": serverTarget,
+      "/assets": serverTarget,
       "/socket.io": {
         target: serverTarget,
         ws: true

@@ -13,7 +13,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src --max-warnings=0",
-    "champions:import": "node scripts/import-data-dragon-champions.mjs"
+    "champions:import": "node scripts/import-data-dragon-champions.mjs",
+    "champions:icons": "node scripts/prepare-data-dragon-icons.mjs"
   },
   "dependencies": {
     "@mmbt/core-draft": "workspace:*",

@@ -44,4 +44,12 @@ assets/hero-icons/lol/LeeSin.png
 assets/hero-icons/lol/MonkeyKing.png
 ```
 
-Official Riot champion artwork is not included in this repository. Until an approved asset package is prepared, overlays render stable text/initial fallbacks and hide failed local image loads.
+To prepare a local icon package from Riot Data Dragon static champion square images before an event, run:
+
+```bash
+pnpm --filter @mmbt/game-lol-sample champions:icons
+```
+
+The icon script reads the current generated champion metadata, uses each champion Data Dragon ID, writes PNGs to `event-packages/sample-event/assets/hero-icons/lol/<ChampionDataId>.png`, skips existing useful files unless `--force` is provided, and prints downloaded/skipped/failed counts. It is a pre-event helper only and is not run by live server startup.
+
+Official Riot champion artwork is not fetched by runtime code. Until an approved local icon package is prepared, overlays and operator panels render stable text fallbacks and hide failed local image loads.

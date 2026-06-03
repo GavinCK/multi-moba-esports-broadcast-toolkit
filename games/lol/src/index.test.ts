@@ -236,6 +236,32 @@ describe("LoL static manual sample adapter", () => {
     expectLocalAssetReference(lolSampleAdapter.getAssetUrl("HERO_SQUARE", "unknown"));
   });
 
+  it("uses Data Dragon champion IDs for representative local icon paths", async () => {
+    const heroes = await lolSampleAdapter.loadHeroes();
+    const heroByName = new Map(heroes.map((hero) => [hero.displayName, hero]));
+    const expectedIconPaths = [
+      ["Kai'Sa", "assets/hero-icons/lol/Kaisa.png"],
+      ["Kha'Zix", "assets/hero-icons/lol/Khazix.png"],
+      ["Cho'Gath", "assets/hero-icons/lol/Chogath.png"],
+      ["Dr. Mundo", "assets/hero-icons/lol/DrMundo.png"],
+      ["Nunu & Willump", "assets/hero-icons/lol/Nunu.png"],
+      ["Jarvan IV", "assets/hero-icons/lol/JarvanIV.png"],
+      ["Aurelion Sol", "assets/hero-icons/lol/AurelionSol.png"],
+      ["Wukong", "assets/hero-icons/lol/MonkeyKing.png"],
+      ["Renata Glasc", "assets/hero-icons/lol/Renata.png"],
+      ["K'Sante", "assets/hero-icons/lol/KSante.png"]
+    ] as const;
+
+    expectedIconPaths.forEach(([displayName, iconUrl]) => {
+      const hero = heroByName.get(displayName);
+
+      expect(hero?.iconUrl).toBe(iconUrl);
+      expect(hero?.squareUrl).toBe(iconUrl);
+      expect(hero?.metadata?.localIconPath).toBe(iconUrl);
+      expectLocalAssetReference(iconUrl);
+    });
+  });
+
   it("validates the LoL-like manual ruleset against the universal draft engine", () => {
     const compatibility = validateLoLSampleRulesetCompatibility(LOL_SAMPLE_STANDARD_RULESET);
     const draftResult = createDraftState({
