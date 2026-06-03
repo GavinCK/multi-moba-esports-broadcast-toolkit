@@ -2,6 +2,7 @@ import type { EventInfo, GameInstance, Match, Player, Sponsor, Team } from "@mmb
 import { describe, expect, it } from "vitest";
 
 import {
+  createMatchPresentationDefaults,
   createUpdatedMatchScore,
   getCurrentGame,
   getMatchFormatGameCount,
@@ -14,7 +15,8 @@ import {
   validateMatchBundle,
   validatePlayer,
   validateSponsor,
-  validateTeam
+  validateTeam,
+  withMatchPresentationDefaults
 } from "./index";
 import type { MatchBundle } from "./index";
 
@@ -234,6 +236,96 @@ describe("core match entity validation", () => {
     expect(result.valid).toBe(false);
     expect(result.issues.map((issue) => issue.code)).toEqual(
       expect.arrayContaining(["invalid-match-format", "duplicate-match-team", "invalid-status"])
+    );
+  });
+
+  it("accepts valid optional match presentation metadata", () => {
+    const result = validateMatch(
+      {
+        ...match,
+        presentation: {
+          matchLabel: "Grand Final - Game 2",
+          patchLabel: "Patch 25.10",
+          seriesFormat: "BO3",
+          gameNumber: 2,
+          scoreBySide: {
+            BLUE: 1,
+            RED: 0
+          },
+          firstPickSide: "BLUE",
+          playerDisplayOrderBySide: {
+            BLUE: ["player-blue-top"],
+            RED: ["player-red-top"]
+          }
+        }
+      },
+      {
+        eventIds: [event.id],
+        gameCodes: event.gameCodes,
+        teamIds: [blueTeam.id, redTeam.id],
+        games
+      }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("keeps missing match presentation metadata valid and derives safe defaults", () => {
+    const result = validateMatch(match);
+    const defaults = createMatchPresentationDefaults(match);
+    const withDefaults = withMatchPresentationDefaults(match);
+
+    expect(result.valid).toBe(true);
+    expect(defaults).toEqual({
+      matchLabel: match.title,
+      patchLabel: undefined,
+      seriesFormat: "BO3",
+      gameNumber: match.currentGameNumber,
+      scoreBySide: {
+        BLUE: match.score.blue,
+        RED: match.score.red
+      },
+      firstPickSide: undefined,
+      sideStatusLabel: undefined,
+      playerDisplayOrderBySide: undefined
+    });
+    expect(withDefaults).toEqual({
+      ...match,
+      presentation: defaults
+    });
+    expect(match.presentation).toBeUndefined();
+  });
+
+  it("rejects invalid match presentation metadata", () => {
+    const result = validateMatch({
+      ...match,
+      presentation: {
+        matchLabel: "",
+        patchLabel: "",
+        seriesFormat: "BO7",
+        gameNumber: 0,
+        scoreBySide: {
+          BLUE: -1,
+          RED: 1.5
+        },
+        firstPickSide: "LEFT",
+        playerDisplayOrderBySide: {
+          BLUE: ["player-blue-top", "player-blue-top"],
+          RED: [""]
+        }
+      }
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining([
+        "invalid-string",
+        "invalid-series-format",
+        "invalid-positive-integer",
+        "invalid-non-negative-integer",
+        "invalid-presentation-side",
+        "duplicate-player-display-order-id"
+      ])
     );
   });
 

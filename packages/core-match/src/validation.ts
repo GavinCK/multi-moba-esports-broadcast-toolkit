@@ -4,6 +4,8 @@ import type {
   GameStatus,
   Match,
   MatchFormat,
+  PresentationSide,
+  SeriesFormat,
   MatchStatus,
   Player,
   Sponsor,
@@ -11,7 +13,7 @@ import type {
   Team
 } from "@mmbt/shared-types";
 
-import { GAME_STATUSES, MATCH_STATUSES, SPONSOR_SLOTS } from "./constants.js";
+import { GAME_STATUSES, MATCH_STATUSES, SERIES_FORMATS, SPONSOR_SLOTS } from "./constants.js";
 import {
   getMatchFormatGameCount,
   getMatchFormatWinsRequired,
@@ -268,6 +270,19 @@ function readPositiveInteger(
   return value as number;
 }
 
+function validateOptionalPositiveInteger(
+  record: Record<string, unknown>,
+  field: string,
+  path: string,
+  issues: ValidationIssue[]
+): void {
+  const value = record[field];
+
+  if (value !== undefined && (!Number.isInteger(value) || (value as number) < 1)) {
+    addIssue(issues, path, "invalid-positive-integer", `${path} must be a positive integer when provided.`);
+  }
+}
+
 function validateStatus<TStatus extends string>(
   value: unknown,
   allowedValues: readonly TStatus[],
@@ -285,6 +300,130 @@ function validateStatus<TStatus extends string>(
   }
 
   return value as TStatus;
+}
+
+function validatePresentationSide(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[]
+): PresentationSide | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value !== "BLUE" && value !== "RED") {
+    addIssue(issues, path, "invalid-presentation-side", `${path} must be BLUE or RED when provided.`);
+    return undefined;
+  }
+
+  return value;
+}
+
+function validateOptionalSeriesFormat(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[]
+): SeriesFormat | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string" || !SERIES_FORMATS.includes(value as SeriesFormat)) {
+    addIssue(issues, path, "invalid-series-format", `${path} must be one of: ${SERIES_FORMATS.join(", ")}.`);
+    return undefined;
+  }
+
+  return value as SeriesFormat;
+}
+
+function validateOptionalStringArray(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[]
+): string[] | undefined {
+  if (!Array.isArray(value)) {
+    addIssue(issues, path, "required-array", `${path} must be an array of player IDs.`);
+    return undefined;
+  }
+
+  const values: string[] = [];
+
+  value.forEach((item, index) => {
+    if (typeof item !== "string" || item.trim().length === 0) {
+      addIssue(issues, `${path}[${index}]`, "invalid-string", `${path}[${index}] must be a non-empty string.`);
+      return;
+    }
+
+    values.push(item);
+  });
+
+  validateUniqueValues(values, path, "duplicate-player-display-order-id", issues);
+
+  return values;
+}
+
+function validatePresentationScoreBySide(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[]
+): void {
+  if (value === undefined) {
+    return;
+  }
+
+  if (!isRecord(value)) {
+    addIssue(issues, path, "required-object", `${path} must be an object with BLUE and RED scores.`);
+    return;
+  }
+
+  readNonNegativeInteger(value, "BLUE", `${path}.BLUE`, issues);
+  readNonNegativeInteger(value, "RED", `${path}.RED`, issues);
+}
+
+function validatePlayerDisplayOrderBySide(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[]
+): void {
+  if (value === undefined) {
+    return;
+  }
+
+  if (!isRecord(value)) {
+    addIssue(issues, path, "required-object", `${path} must be an object with BLUE and RED player ID arrays.`);
+    return;
+  }
+
+  validateOptionalStringArray(value.BLUE, `${path}.BLUE`, issues);
+  validateOptionalStringArray(value.RED, `${path}.RED`, issues);
+}
+
+function validateMatchPresentation(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[]
+): void {
+  if (value === undefined) {
+    return;
+  }
+
+  if (!isRecord(value)) {
+    addIssue(issues, path, "required-object", `${path} must be an object when provided.`);
+    return;
+  }
+
+  validateOptionalString(value, "matchLabel", `${path}.matchLabel`, issues);
+  validateOptionalString(value, "patchLabel", `${path}.patchLabel`, issues);
+  validateOptionalString(value, "sideStatusLabel", `${path}.sideStatusLabel`, issues);
+  validateOptionalSeriesFormat(value.seriesFormat, `${path}.seriesFormat`, issues);
+  validateOptionalPositiveInteger(value, "gameNumber", `${path}.gameNumber`, issues);
+  validatePresentationScoreBySide(value.scoreBySide, `${path}.scoreBySide`, issues);
+  validatePresentationSide(value.firstPickSide, `${path}.firstPickSide`, issues);
+  validatePlayerDisplayOrderBySide(
+    value.playerDisplayOrderBySide,
+    `${path}.playerDisplayOrderBySide`,
+    issues
+  );
 }
 
 function validateMatchScoreValues(
@@ -426,6 +565,7 @@ export function validateTeam(team: unknown, options: TeamValidationOptions = {})
   readRequiredString(team, "name", `${path}.name`, issues);
   readRequiredString(team, "shortName", `${path}.shortName`, issues);
   validateOptionalString(team, "logoUrl", `${path}.logoUrl`, issues);
+  validateOptionalString(team, "logoAssetPath", `${path}.logoAssetPath`, issues);
   validateOptionalString(team, "countryCode", `${path}.countryCode`, issues);
   validateOptionalString(team, "primaryColor", `${path}.primaryColor`, issues);
   validateOptionalString(team, "secondaryColor", `${path}.secondaryColor`, issues);
@@ -448,6 +588,7 @@ export function validatePlayer(
 
   readRequiredString(player, "id", `${path}.id`, issues);
   const teamId = readRequiredString(player, "teamId", `${path}.teamId`, issues);
+  validateOptionalString(player, "handle", `${path}.handle`, issues);
   readRequiredString(player, "displayName", `${path}.displayName`, issues);
   validateOptionalString(player, "realName", `${path}.realName`, issues);
   validateOptionalString(player, "role", `${path}.role`, issues);
@@ -550,6 +691,7 @@ export function validateMatch(match: unknown, options: MatchValidationOptions = 
   const currentGameNumber = readPositiveInteger(match, "currentGameNumber", `${path}.currentGameNumber`, issues);
   const status = validateStatus<MatchStatus>(match.status, MATCH_STATUSES, `${path}.status`, issues);
   validateOptionalDateString(match, "scheduledStartTime", `${path}.scheduledStartTime`, issues);
+  validateMatchPresentation(match.presentation, `${path}.presentation`, issues);
   validateOptionalJsonObject(match, "metadata", `${path}.metadata`, issues);
 
   if (format && currentGameNumber !== undefined) {

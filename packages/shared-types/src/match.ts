@@ -6,6 +6,27 @@ export type MatchFormat = "BO1" | "BO3" | "BO5" | "BO7";
 
 export type TeamSide = "BLUE" | "RED" | "LEFT" | "RIGHT";
 
+export type SeriesFormat = "BO1" | "BO3" | "BO5";
+
+export type PresentationSide = "BLUE" | "RED";
+
+export interface MatchPresentationMetadata {
+  matchLabel?: string;
+  patchLabel?: string;
+  seriesFormat?: SeriesFormat;
+  gameNumber?: number;
+  scoreBySide?: {
+    BLUE: number;
+    RED: number;
+  };
+  firstPickSide?: PresentationSide;
+  sideStatusLabel?: string;
+  playerDisplayOrderBySide?: {
+    BLUE: string[];
+    RED: string[];
+  };
+}
+
 export interface EventInfo {
   id: string;
   name: string;
@@ -25,6 +46,7 @@ export interface Team {
   name: string;
   shortName: string;
   logoUrl?: string;
+  logoAssetPath?: string;
   countryCode?: string;
   primaryColor?: string;
   secondaryColor?: string;
@@ -34,6 +56,7 @@ export interface Team {
 export interface Player {
   id: string;
   teamId: string;
+  handle?: string;
   displayName: string;
   realName?: string;
   role?: string;
@@ -86,6 +109,7 @@ export interface Match {
   currentGameNumber: number;
   status: MatchStatus;
   scheduledStartTime?: string;
+  presentation?: MatchPresentationMetadata;
   metadata?: JsonObject;
 }
 

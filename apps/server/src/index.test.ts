@@ -28,6 +28,21 @@ const genericFirstActionId = "ban-1-blue:slot-0";
 const genericSecondActionId = "ban-1-red:slot-0";
 const genericHeroId = "generic-vanguard";
 const lolDraftId = "draft_lol-001";
+const lolMatchId = "match_lol-showmatch";
+const bluePlayerDisplayOrder = [
+  "player_blue-top",
+  "player_blue-jungle",
+  "player_blue-mid",
+  "player_blue-bot",
+  "player_blue-support"
+];
+const redPlayerDisplayOrder = [
+  "player_red-top",
+  "player_red-jungle",
+  "player_red-mid",
+  "player_red-bot",
+  "player_red-support"
+];
 
 interface LocalServerContext {
   baseUrl: string;
@@ -289,6 +304,41 @@ function expectLoadedPackage(result: ReturnType<typeof loadEventPackage>): Loade
   return result.value;
 }
 
+function getLoadErrorIssueCodes(result: ReturnType<typeof loadEventPackage>): string[] {
+  expect(result.ok).toBe(false);
+
+  if (result.ok) {
+    return [];
+  }
+
+  const details = result.error.details as {
+    issues?: Array<{
+      code?: unknown;
+    }>;
+  };
+
+  return Array.isArray(details.issues) ? details.issues.map((issue) => String(issue.code)) : [];
+}
+
+function updateMatchInPackage(
+  packagePath: string,
+  matchId: string,
+  update: (match: Record<string, unknown>) => void
+): void {
+  const matchesPath = join(packagePath, "matches.json");
+  const matchesFile = JSON.parse(readFileSync(matchesPath, "utf8")) as {
+    matches: Array<Record<string, unknown>>;
+  };
+  const match = matchesFile.matches.find((item) => item.id === matchId);
+
+  if (!match) {
+    throw new Error(`Expected match ${matchId} in test event package.`);
+  }
+
+  update(match);
+  writeFileSync(matchesPath, `${JSON.stringify(matchesFile, null, 2)}\n`, "utf8");
+}
+
 describe("server runtime foundation", () => {
   it("loads the sample event package through the local loader", () => {
     const snapshot = expectLoadedPackage(
@@ -301,6 +351,30 @@ describe("server runtime foundation", () => {
     expect(snapshot.packageId).toBe("sample-event");
     expect(snapshot.event.id).toBe("event_sample-2026");
     expect(snapshot.matches.map((match) => match.id)).toContain("match_grand-final");
+    expect(snapshot.matches.find((match) => match.id === genericMatchId)?.presentation).toMatchObject({
+      matchLabel: "Grand Final",
+      seriesFormat: "BO3",
+      gameNumber: 1,
+      scoreBySide: {
+        BLUE: 0,
+        RED: 0
+      }
+    });
+    expect(snapshot.matches.find((match) => match.id === lolMatchId)?.presentation).toMatchObject({
+      matchLabel: "LoL Sample Showmatch",
+      patchLabel: "Patch 25.10",
+      seriesFormat: "BO1",
+      gameNumber: 1,
+      scoreBySide: {
+        BLUE: 0,
+        RED: 0
+      },
+      firstPickSide: "BLUE",
+      playerDisplayOrderBySide: {
+        BLUE: bluePlayerDisplayOrder,
+        RED: redPlayerDisplayOrder
+      }
+    });
     expect(snapshot.rulesets.length).toBeGreaterThanOrEqual(4);
     expect(snapshot.themes.map((theme) => theme.id)).toContain("default-theme");
     expect(snapshot.assetStatus.missingAssets).toEqual([]);
@@ -356,6 +430,86 @@ describe("server runtime foundation", () => {
       });
     } finally {
       rmSync(invalidRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects invalid match presentation metadata during event package load", () => {
+    const tempPackagePath = createTempEventPackage("mmbt-invalid-presentation-");
+
+    try {
+      updateMatchInPackage(tempPackagePath, lolMatchId, (match) => {
+        match.presentation = {
+          matchLabel: "Invalid Presentation",
+          patchLabel: "Patch 25.10",
+          seriesFormat: "BO7",
+          gameNumber: 0,
+          scoreBySide: {
+            BLUE: -1,
+            RED: 1.5
+          },
+          firstPickSide: "LEFT",
+          playerDisplayOrderBySide: {
+            BLUE: bluePlayerDisplayOrder,
+            RED: redPlayerDisplayOrder
+          }
+        };
+      });
+
+      const result = loadEventPackage({
+        packageRoot: tempPackagePath,
+        repositoryRoot
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.ok ? null : result.error).toMatchObject({
+        code: "EVENT_PACKAGE_INVALID",
+        httpStatus: 422
+      });
+      expect(getLoadErrorIssueCodes(result)).toEqual(
+        expect.arrayContaining([
+          "invalid-series-format",
+          "invalid-positive-integer",
+          "invalid-non-negative-integer",
+          "invalid-presentation-side"
+        ])
+      );
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects presentation player display order entries outside the matching team side", () => {
+    const tempPackagePath = createTempEventPackage("mmbt-invalid-presentation-order-");
+
+    try {
+      updateMatchInPackage(tempPackagePath, lolMatchId, (match) => {
+        if (typeof match.presentation !== "object" || match.presentation === null || Array.isArray(match.presentation)) {
+          throw new Error("Expected sample LoL match presentation metadata.");
+        }
+
+        const presentation = match.presentation as Record<string, unknown>;
+
+        presentation.playerDisplayOrderBySide = {
+          BLUE: ["player_red-top"],
+          RED: ["player_missing"]
+        };
+      });
+
+      const result = loadEventPackage({
+        packageRoot: tempPackagePath,
+        repositoryRoot
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.ok ? null : result.error).toMatchObject({
+        code: "EVENT_PACKAGE_INVALID",
+        httpStatus: 422
+      });
+      expect(getLoadErrorIssueCodes(result)).toEqual(
+        expect.arrayContaining(["player-side-mismatch", "unknown-player"])
+      );
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
     }
   });
 
@@ -482,7 +636,27 @@ describe("server runtime foundation", () => {
             readOnly: true,
             mutationAllowed: false
           }
-        }
+        },
+        matches: expect.arrayContaining([
+          expect.objectContaining({
+            id: lolMatchId,
+            presentation: expect.objectContaining({
+              matchLabel: "LoL Sample Showmatch",
+              patchLabel: "Patch 25.10",
+              seriesFormat: "BO1",
+              gameNumber: 1,
+              scoreBySide: {
+                BLUE: 0,
+                RED: 0
+              },
+              firstPickSide: "BLUE",
+              playerDisplayOrderBySide: {
+                BLUE: bluePlayerDisplayOrder,
+                RED: redPlayerDisplayOrder
+              }
+            })
+          })
+        ])
       }
     });
 
@@ -534,7 +708,17 @@ describe("server runtime foundation", () => {
     expect(matches.body).toMatchObject({
       ok: true,
       data: {
-        eventPackageId: "sample-event"
+        eventPackageId: "sample-event",
+        matches: expect.arrayContaining([
+          expect.objectContaining({
+            id: lolMatchId,
+            presentation: expect.objectContaining({
+              matchLabel: "LoL Sample Showmatch",
+              patchLabel: "Patch 25.10",
+              firstPickSide: "BLUE"
+            })
+          })
+        ])
       }
     });
 

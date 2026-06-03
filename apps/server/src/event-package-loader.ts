@@ -14,7 +14,8 @@ import {
   validateMatchBundle,
   validatePlayer,
   validateSponsor,
-  validateTeam
+  validateTeam,
+  withMatchPresentationDefaults
 } from "@mmbt/core-match";
 import type {
   DraftRuleset,
@@ -502,6 +503,7 @@ function collectDraftValidationIssues(
 function validateEntityLinkages(
   eventFile: EventPackageEventFile | undefined,
   teams: readonly Team[],
+  players: readonly Player[],
   sponsors: readonly Sponsor[],
   matches: readonly unknown[],
   games: readonly unknown[],
@@ -514,6 +516,7 @@ function validateEntityLinkages(
   }
 
   const teamIds = new Set(teams.map((team) => team.id));
+  const playersById = new Map(players.map((player) => [player.id, player]));
   const sponsorIds = new Set(sponsors.map((sponsor) => sponsor.id));
   const matchIds = new Set(matches.filter(isRecord).map((match) => String(match.id)));
   const rulesetIds = new Set(rulesets.map((ruleset) => ruleset.id));
@@ -594,6 +597,50 @@ function validateEntityLinkages(
 
     if (typeof match.themeId === "string" && !themeIds.has(match.themeId)) {
       addIssue(issues, `${matchPath}.themeId`, "unknown-theme", "Match theme ID must reference a loaded theme.");
+    }
+
+    if (isRecord(match.presentation) && isRecord(match.presentation.playerDisplayOrderBySide)) {
+      const orderBySide = match.presentation.playerDisplayOrderBySide;
+      const expectedTeamBySide = {
+        BLUE: isRecord(match.teams) && typeof match.teams.blue === "string" ? match.teams.blue : undefined,
+        RED: isRecord(match.teams) && typeof match.teams.red === "string" ? match.teams.red : undefined
+      };
+
+      (["BLUE", "RED"] as const).forEach((side) => {
+        const playerIds = orderBySide[side];
+
+        if (!Array.isArray(playerIds)) {
+          return;
+        }
+
+        playerIds.forEach((playerId, playerIndex) => {
+          if (typeof playerId !== "string") {
+            return;
+          }
+
+          const player = playersById.get(playerId);
+          const expectedTeamId = expectedTeamBySide[side];
+
+          if (!player) {
+            addIssue(
+              issues,
+              `${matchPath}.presentation.playerDisplayOrderBySide.${side}[${playerIndex}]`,
+              "unknown-player",
+              "Presentation player display order must reference loaded players."
+            );
+            return;
+          }
+
+          if (expectedTeamId && player.teamId !== expectedTeamId) {
+            addIssue(
+              issues,
+              `${matchPath}.presentation.playerDisplayOrderBySide.${side}[${playerIndex}]`,
+              "player-side-mismatch",
+              "Presentation player display order must reference players from the matching team side."
+            );
+          }
+        });
+      });
     }
   });
 
@@ -848,7 +895,7 @@ export function loadEventPackage(options: LoadEventPackageOptions): AppResult<Lo
         }
       : undefined;
 
-  validateEntityLinkages(eventPackageFile, teams, sponsors, matchItems, gameItems, rulesets, themes, issues);
+  validateEntityLinkages(eventPackageFile, teams, players, sponsors, matchItems, gameItems, rulesets, themes, issues);
 
   const errorIssues = issues.filter((issue) => issue.severity === "error");
 
@@ -858,6 +905,9 @@ export function loadEventPackage(options: LoadEventPackageOptions): AppResult<Lo
 
   const warningIssues = issues.filter((issue) => issue.severity === "warning");
   const productionLogPath = toPortablePath(eventPackageFile.defaults.productionLogPath);
+  const matchesWithPresentation = (matchItems as EventPackageMatch[]).map((match) =>
+    withMatchPresentationDefaults(match)
+  );
 
   return ok({
     packageId: eventPackageFile.packageId,
@@ -868,7 +918,7 @@ export function loadEventPackage(options: LoadEventPackageOptions): AppResult<Lo
     teams,
     players,
     sponsors,
-    matches: matchItems as EventPackageMatch[],
+    matches: matchesWithPresentation,
     games: gameItems as EventPackageGameInstance[],
     rulesets,
     themes,

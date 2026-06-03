@@ -2,11 +2,14 @@ import type {
   GameStatus,
   MatchFormat,
   MatchStatus,
+  SeriesFormat,
   SponsorSlot,
   TeamSide
 } from "@mmbt/shared-types";
 
 export const MATCH_FORMATS = ["BO1", "BO3", "BO5", "BO7"] as const satisfies readonly MatchFormat[];
+
+export const SERIES_FORMATS = ["BO1", "BO3", "BO5"] as const satisfies readonly SeriesFormat[];
 
 export const TEAM_SIDES = ["BLUE", "RED", "LEFT", "RIGHT"] as const satisfies readonly TeamSide[];
 

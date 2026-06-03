@@ -72,6 +72,33 @@
         "blue": 0,
         "red": 0
       },
+      "presentation": {
+        "matchLabel": "LoL Sample Showmatch",
+        "patchLabel": "Patch 25.10",
+        "seriesFormat": "BO1",
+        "gameNumber": 1,
+        "scoreBySide": {
+          "BLUE": 0,
+          "RED": 0
+        },
+        "firstPickSide": "BLUE",
+        "playerDisplayOrderBySide": {
+          "BLUE": [
+            "player_blue-top",
+            "player_blue-jungle",
+            "player_blue-mid",
+            "player_blue-bot",
+            "player_blue-support"
+          ],
+          "RED": [
+            "player_red-top",
+            "player_red-jungle",
+            "player_red-mid",
+            "player_red-bot",
+            "player_red-support"
+          ]
+        }
+      },
       "currentGameNumber": 1,
       "status": "READY",
       "sponsorSlotIds": ["sponsor_presented-by"],

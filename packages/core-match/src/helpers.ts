@@ -1,10 +1,21 @@
-import type { GameInstance, Match, MatchFormat, Team } from "@mmbt/shared-types";
+import type {
+  GameInstance,
+  Match,
+  MatchFormat,
+  MatchPresentationMetadata,
+  SeriesFormat,
+  Team
+} from "@mmbt/shared-types";
 
-import { MATCH_FORMATS } from "./constants.js";
+import { MATCH_FORMATS, SERIES_FORMATS } from "./constants.js";
 import type { MatchTeams } from "./types.js";
 
 export function isMatchFormat(value: unknown): value is MatchFormat {
   return typeof value === "string" && MATCH_FORMATS.includes(value as MatchFormat);
+}
+
+export function isSeriesFormat(value: unknown): value is SeriesFormat {
+  return typeof value === "string" && SERIES_FORMATS.includes(value as SeriesFormat);
 }
 
 export function getMatchFormatGameCount(format: MatchFormat): number {
@@ -47,4 +58,35 @@ export function getMatchTeams(match: Match, teams: readonly Team[]): MatchTeams 
   }
 
   return { blue, red };
+}
+
+export function createMatchPresentationDefaults(match: Match): MatchPresentationMetadata {
+  const presentation = match.presentation ?? {};
+  const seriesFormat = presentation.seriesFormat ?? (isSeriesFormat(match.format) ? match.format : undefined);
+
+  return {
+    matchLabel: presentation.matchLabel ?? match.title,
+    patchLabel: presentation.patchLabel,
+    seriesFormat,
+    gameNumber: presentation.gameNumber ?? match.currentGameNumber,
+    scoreBySide: presentation.scoreBySide ?? {
+      BLUE: match.score.blue,
+      RED: match.score.red
+    },
+    firstPickSide: presentation.firstPickSide,
+    sideStatusLabel: presentation.sideStatusLabel,
+    playerDisplayOrderBySide: presentation.playerDisplayOrderBySide
+      ? {
+          BLUE: [...presentation.playerDisplayOrderBySide.BLUE],
+          RED: [...presentation.playerDisplayOrderBySide.RED]
+        }
+      : undefined
+  };
+}
+
+export function withMatchPresentationDefaults<TMatch extends Match>(match: TMatch): TMatch {
+  return {
+    ...match,
+    presentation: createMatchPresentationDefaults(match)
+  };
 }

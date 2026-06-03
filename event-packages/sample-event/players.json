@@ -4,6 +4,7 @@
     {
       "id": "player_blue-top",
       "teamId": "team_blue-meteors",
+      "handle": "BlueAtlas",
       "displayName": "BlueAtlas",
       "role": "Top",
       "nationality": "HK"
@@ -11,6 +12,7 @@
     {
       "id": "player_blue-jungle",
       "teamId": "team_blue-meteors",
+      "handle": "BluePath",
       "displayName": "BluePath",
       "role": "Jungle",
       "nationality": "HK"
@@ -18,6 +20,7 @@
     {
       "id": "player_blue-mid",
       "teamId": "team_blue-meteors",
+      "handle": "BluePulse",
       "displayName": "BluePulse",
       "role": "Mid",
       "nationality": "HK"
@@ -25,6 +28,7 @@
     {
       "id": "player_blue-bot",
       "teamId": "team_blue-meteors",
+      "handle": "BlueArrow",
       "displayName": "BlueArrow",
       "role": "Bot",
       "nationality": "HK"
@@ -32,6 +36,7 @@
     {
       "id": "player_blue-support",
       "teamId": "team_blue-meteors",
+      "handle": "BlueAnchor",
       "displayName": "BlueAnchor",
       "role": "Support",
       "nationality": "HK"
@@ -39,6 +44,7 @@
     {
       "id": "player_red-top",
       "teamId": "team_red-titans",
+      "handle": "RedAegis",
       "displayName": "RedAegis",
       "role": "Top",
       "nationality": "HK"
@@ -46,6 +52,7 @@
     {
       "id": "player_red-jungle",
       "teamId": "team_red-titans",
+      "handle": "RedTrail",
       "displayName": "RedTrail",
       "role": "Jungle",
       "nationality": "HK"
@@ -53,6 +60,7 @@
     {
       "id": "player_red-mid",
       "teamId": "team_red-titans",
+      "handle": "RedSpark",
       "displayName": "RedSpark",
       "role": "Mid",
       "nationality": "HK"
@@ -60,6 +68,7 @@
     {
       "id": "player_red-bot",
       "teamId": "team_red-titans",
+      "handle": "RedBolt",
       "displayName": "RedBolt",
       "role": "Bot",
       "nationality": "HK"
@@ -67,6 +76,7 @@
     {
       "id": "player_red-support",
       "teamId": "team_red-titans",
+      "handle": "RedHarbor",
       "displayName": "RedHarbor",
       "role": "Support",
       "nationality": "HK"
