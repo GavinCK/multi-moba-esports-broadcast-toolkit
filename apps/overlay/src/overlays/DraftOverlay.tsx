@@ -17,6 +17,11 @@ import type {
   OverlayMatch,
   OverlayRuntimeState
 } from "../client/types";
+import {
+  formatDraftTimer,
+  useDraftTimerDisplay,
+  type DraftTimerDisplayState
+} from "./draftTimer";
 
 type DraftOverlayState = "loading" | "missing-match" | "missing-draft" | "ready";
 type DraftSide = "BLUE" | "RED";
@@ -45,7 +50,7 @@ export interface DraftOverlayViewModel {
   bluePicks: DraftOverlaySlot[];
   redPicks: DraftOverlaySlot[];
   timerText: string;
-  timerState: "running" | "paused" | "expired" | "complete" | "standby";
+  timerState: DraftTimerDisplayState;
   phaseLabel: string;
   activeSide: DraftSide | "NONE";
   activeSideLabel: string;
@@ -96,14 +101,6 @@ function formatStatus(value: string | null | undefined): string {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function formatTimer(seconds: number | null | undefined): string {
-  const safeSeconds = Math.max(0, Math.floor(Number.isFinite(seconds) ? Number(seconds) : 0));
-  const minutes = Math.floor(safeSeconds / 60).toString().padStart(2, "0");
-  const remainder = (safeSeconds % 60).toString().padStart(2, "0");
-
-  return `${minutes}:${remainder}`;
 }
 
 function formatEntityId(id: string): string {
@@ -598,7 +595,7 @@ export function selectDraftOverlayViewModel(
     redBans: filterSlots(slots, "RED", "BAN"),
     bluePicks,
     redPicks,
-    timerText: draft ? formatTimer(draft.timer.remainingSeconds) : "--:--",
+    timerText: draft ? formatDraftTimer(draft.timer.remainingSeconds) : "--:--",
     timerState: getTimerState(draft),
     phaseLabel: getPhaseLabel(draft, ruleset),
     activeSide,
@@ -766,6 +763,7 @@ export function DraftOverlay({
   debug: boolean;
 }) {
   const viewModel = selectDraftOverlayViewModel(clientState, matchId);
+  const timerDisplay = useDraftTimerDisplay(viewModel.draft?.status, viewModel.draft?.timer);
   const theme = viewModel.theme ?? DEFAULT_THEME;
   const style = {
     "--draft-blue": viewModel.blueTeam?.primaryColor ?? theme.colors.blueTeam,
@@ -813,9 +811,9 @@ export function DraftOverlay({
         <TeamHeader side="BLUE" team={viewModel.blueTeam} isActive={viewModel.activeSide === "BLUE"} />
         <div className="draft-center">
           <SponsorMark sponsor={viewModel.sponsor} />
-          <div className="draft-timer" data-timer-state={viewModel.timerState}>
-            <span>{viewModel.timerState === "expired" ? "Expired" : viewModel.draftStatusLabel}</span>
-            <strong>{viewModel.timerText}</strong>
+          <div className="draft-timer" data-timer-state={timerDisplay.timerState}>
+            <span>{timerDisplay.timerState === "expired" ? "Expired" : viewModel.draftStatusLabel}</span>
+            <strong>{timerDisplay.timerText}</strong>
           </div>
           <div className="draft-phase">
             <span>{viewModel.phaseLabel}</span>

@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   DraftAction,
   DraftActionStatus,
@@ -375,6 +375,15 @@ function expectActionOrder(markup: string, actionIds: string[]): void {
 }
 
 describe("draft overlay", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(timestamp));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders the full draft overlay when data exists", () => {
     const markup = renderDraft();
 
@@ -385,6 +394,15 @@ describe("draft overlay", () => {
     expect(markup).toContain("Active Side: Red");
     expect(markup).toContain("Live");
     expect(markup).toContain("Local LAN Studios");
+  });
+
+  it("renders the locally derived running timer between server snapshots", () => {
+    vi.setSystemTime(new Date("2026-06-02T06:00:04.000Z"));
+
+    const markup = renderDraft();
+
+    expect(markup).toContain('data-timer-state="running"');
+    expect(markup).toContain("00:20");
   });
 
   it("renders blue and red team names with team logo fallback", () => {
