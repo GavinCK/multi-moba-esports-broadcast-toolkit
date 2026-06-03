@@ -84,6 +84,7 @@ export function calculateTimerState(
 
   return ok({
     ...timer,
+    phaseStartedAt: now,
     remainingSeconds
   });
 }

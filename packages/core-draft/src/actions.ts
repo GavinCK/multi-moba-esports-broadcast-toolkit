@@ -15,6 +15,7 @@ import type {
 
 import { COMPLETE_ACTION_STATUSES, TEAM_SIDES } from "./constants.js";
 import { fail, ok, type DraftEngineError, type DraftEngineResult } from "./errors.js";
+import { maybeStartFinalLineupPhase } from "./lineup.js";
 import { calculateTimerState, createTimerForPhase } from "./timer.js";
 
 export interface DraftActionOperationOptions {
@@ -489,7 +490,7 @@ function lockResolvedAction(
     ];
   }
 
-  return ok({
+  const nextState: DraftState = {
     ...state,
     currentPhaseIndex,
     timer,
@@ -499,7 +500,9 @@ function lockResolvedAction(
     pickedHeroIds: arrays.pickedHeroIds,
     history,
     updatedAt: timestamp
-  });
+  };
+
+  return ok(maybeStartFinalLineupPhase(nextState, { now: timestamp, operatorId }));
 }
 
 function removeLastMatchingHero(heroIds: readonly string[], heroId: string): string[] {
@@ -824,6 +827,14 @@ export function undoLastAction(
     });
   }
 
+  if (state.finalLineup) {
+    return fail({
+      code: "draft-lineup-active",
+      message: "Undo is not allowed after the final lineup phase has started. Reset the draft if pick/ban history must change.",
+      details: { lineupStatus: state.finalLineup.status }
+    });
+  }
+
   const actionIndex = findLastReversibleActionIndex(state);
   const action = state.actions[actionIndex];
 
@@ -916,6 +927,14 @@ export function redoLastUndoneAction(
   ruleset: DraftRuleset,
   options: DraftHistoryOperationOptions = {}
 ): DraftEngineResult<DraftState> {
+  if (state.finalLineup) {
+    return fail({
+      code: "draft-lineup-active",
+      message: "Redo is not allowed after the final lineup phase has started. Reset the draft if pick/ban history must change.",
+      details: { lineupStatus: state.finalLineup.status }
+    });
+  }
+
   const resolved = resolveRedoAction(state, ruleset);
 
   if (!resolved.ok) {

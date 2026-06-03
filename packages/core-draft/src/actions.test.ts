@@ -3,11 +3,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   calculateTimerState,
+  completeDraft,
+  confirmFinalLineup,
   createDraftState,
+  formatDraftActionSlotLabel,
+  getFinalLineupActionIdsForSide,
   hoverHero,
   lockHero,
   pauseDraft,
   redoLastUndoneAction,
+  reorderFinalLineup,
+  resetFinalLineupSide,
   resumeDraft,
   startDraft,
   undoLastAction,
@@ -83,6 +89,88 @@ const twoBanRuleset: DraftRuleset = {
   ]
 };
 
+const countTwoThirtySecondRuleset: DraftRuleset = {
+  ...actionRuleset,
+  id: "generic-count-two-thirty-second-test",
+  phases: [
+    {
+      id: "blue-ban-1",
+      type: "BAN",
+      team: "BLUE",
+      count: 1,
+      timeSeconds: 30,
+      allowHover: true,
+      autoAdvance: true
+    },
+    {
+      id: "red-pick-1-2",
+      type: "PICK",
+      team: "RED",
+      count: 2,
+      timeSeconds: 30,
+      allowHover: true,
+      autoAdvance: true
+    }
+  ]
+};
+
+const lineupRuleset: DraftRuleset = {
+  id: "generic-lineup-test",
+  gameCode: "generic-moba",
+  name: "Generic Lineup Test",
+  allowDuplicateHeroes: false,
+  globalBanAcrossSeries: false,
+  globalPickAcrossSeries: false,
+  phases: [
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `blue-pick-${index + 1}`,
+      type: "PICK" as const,
+      team: "BLUE" as const,
+      count: 1,
+      timeSeconds: 30,
+      allowHover: true,
+      autoAdvance: true
+    })),
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `red-pick-${index + 1}`,
+      type: "PICK" as const,
+      team: "RED" as const,
+      count: 1,
+      timeSeconds: 30,
+      allowHover: true,
+      autoAdvance: true
+    }))
+  ]
+};
+
+const labelRuleset: DraftRuleset = {
+  id: "generic-label-test",
+  gameCode: "generic-moba",
+  name: "Generic Label Test",
+  allowDuplicateHeroes: false,
+  globalBanAcrossSeries: false,
+  globalPickAcrossSeries: false,
+  phases: [
+    { id: "ban-blue-1", type: "BAN", team: "BLUE", count: 1, timeSeconds: 30 },
+    { id: "ban-red-1", type: "BAN", team: "RED", count: 1, timeSeconds: 30 },
+    { id: "ban-blue-2", type: "BAN", team: "BLUE", count: 1, timeSeconds: 30 },
+    { id: "ban-red-2", type: "BAN", team: "RED", count: 1, timeSeconds: 30 },
+    { id: "ban-blue-3", type: "BAN", team: "BLUE", count: 1, timeSeconds: 30 },
+    { id: "ban-red-3", type: "BAN", team: "RED", count: 1, timeSeconds: 30 },
+    { id: "pick-blue-1", type: "PICK", team: "BLUE", count: 1, timeSeconds: 30 },
+    { id: "pick-red-1-2", type: "PICK", team: "RED", count: 2, timeSeconds: 60 },
+    { id: "pick-blue-2-3", type: "PICK", team: "BLUE", count: 2, timeSeconds: 60 },
+    { id: "pick-red-3", type: "PICK", team: "RED", count: 1, timeSeconds: 30 },
+    { id: "ban-red-4", type: "BAN", team: "RED", count: 1, timeSeconds: 30 },
+    { id: "ban-blue-4", type: "BAN", team: "BLUE", count: 1, timeSeconds: 30 },
+    { id: "ban-red-5", type: "BAN", team: "RED", count: 1, timeSeconds: 30 },
+    { id: "ban-blue-5", type: "BAN", team: "BLUE", count: 1, timeSeconds: 30 },
+    { id: "pick-red-4", type: "PICK", team: "RED", count: 1, timeSeconds: 30 },
+    { id: "pick-blue-4-5", type: "PICK", team: "BLUE", count: 2, timeSeconds: 60 },
+    { id: "pick-red-5", type: "PICK", team: "RED", count: 1, timeSeconds: 30 }
+  ]
+};
+
 function unwrap<TValue>(result: DraftEngineResult<TValue>): TValue {
   if (!result.ok) {
     throw new Error(result.error.message);
@@ -103,6 +191,65 @@ function createLiveDraft(ruleset: DraftRuleset = actionRuleset): DraftState {
 
   return unwrap(startDraft(readyDraft, ruleset, { now: startAt, operatorId: "operator-1" }));
 }
+
+function createLineupDraft(): DraftState {
+  return lineupRuleset.phases.reduce((draft, phase, index) => {
+    const actionId = `${phase.id}:slot-0`;
+
+    return unwrap(
+      lockHero(draft, lineupRuleset, {
+        actionId,
+        heroId: `hero-lineup-${index + 1}`,
+        now: `2026-05-30T12:00:${String(index + 1).padStart(2, "0")}.000Z`,
+        operatorId: "operator-1"
+      })
+    );
+  }, createLiveDraft(lineupRuleset));
+}
+
+describe("draft action label helpers", () => {
+  it("derives side/action ordinals across the whole draft instead of repeating phase-local slot numbers", () => {
+    const draft = unwrap(
+      createDraftState({
+        gameId: "game-label-test",
+        ruleset: labelRuleset,
+        now: startAt
+      })
+    );
+    const labels = draft.actions.map((action) =>
+      formatDraftActionSlotLabel(action, draft.actions, { casing: "upper" })
+    );
+
+    expect(labels).toEqual([
+      "BLUE BAN 1",
+      "RED BAN 1",
+      "BLUE BAN 2",
+      "RED BAN 2",
+      "BLUE BAN 3",
+      "RED BAN 3",
+      "BLUE PICK 1",
+      "RED PICK 1",
+      "RED PICK 2",
+      "BLUE PICK 2",
+      "BLUE PICK 3",
+      "RED PICK 3",
+      "RED BAN 4",
+      "BLUE BAN 4",
+      "RED BAN 5",
+      "BLUE BAN 5",
+      "RED PICK 4",
+      "BLUE PICK 4",
+      "BLUE PICK 5",
+      "RED PICK 5"
+    ]);
+    expect(labels.filter((label) => label === "BLUE BAN 1")).toHaveLength(1);
+    expect(labels.filter((label) => label === "RED PICK 1")).toHaveLength(1);
+    expect(labels).toContain("BLUE BAN 5");
+    expect(labels).toContain("RED BAN 5");
+    expect(labels).toContain("BLUE PICK 5");
+    expect(labels).toContain("RED PICK 5");
+  });
+});
 
 describe("draft hover actions", () => {
   it("applies a valid hover without locking or advancing", () => {
@@ -184,6 +331,25 @@ describe("draft lock actions and duplicate blocking", () => {
       phaseStartedAt: plusOneSecond,
       remainingSeconds: 60,
       originalSeconds: 60
+    });
+  });
+
+  it("uses the declared phase timer for count greater than one instead of multiplying by slot count", () => {
+    const lockedDraft = unwrap(
+      lockHero(createLiveDraft(countTwoThirtySecondRuleset), countTwoThirtySecondRuleset, {
+        actionId: "blue-ban-1:slot-0",
+        heroId: "hero-ban-1",
+        now: plusOneSecond,
+        operatorId: "operator-1"
+      })
+    );
+
+    expect(lockedDraft.currentPhaseIndex).toBe(1);
+    expect(lockedDraft.timer).toEqual({
+      isRunning: true,
+      phaseStartedAt: plusOneSecond,
+      remainingSeconds: 30,
+      originalSeconds: 30
     });
   });
 
@@ -308,6 +474,23 @@ describe("draft lock actions and duplicate blocking", () => {
 });
 
 describe("draft timer helpers", () => {
+  it("rebases a running timer snapshot to the calculation timestamp", () => {
+    const liveDraft = createLiveDraft();
+    const timer = unwrap(
+      calculateTimerState({
+        timer: liveDraft.timer,
+        now: "2026-05-30T12:00:05.000Z"
+      })
+    );
+
+    expect(timer).toEqual({
+      isRunning: true,
+      phaseStartedAt: "2026-05-30T12:00:05.000Z",
+      remainingSeconds: 25,
+      originalSeconds: 30
+    });
+  });
+
   it("calculates timeout state without locking, banning, picking, or advancing", () => {
     const liveDraft = createLiveDraft();
     const timer = unwrap(
@@ -353,6 +536,211 @@ describe("draft timer helpers", () => {
       remainingSeconds: 20,
       originalSeconds: 30
     });
+  });
+});
+
+describe("final lineup helpers", () => {
+  it("starts a 60-second final lineup phase with default order matching locked pick order", () => {
+    const lineupDraft = createLineupDraft();
+
+    expect(lineupDraft.finalLineup).toMatchObject({
+      status: "ACTIVE",
+      finalLineupBySide: {
+        BLUE: [
+          "blue-pick-1:slot-0",
+          "blue-pick-2:slot-0",
+          "blue-pick-3:slot-0",
+          "blue-pick-4:slot-0",
+          "blue-pick-5:slot-0"
+        ],
+        RED: [
+          "red-pick-1:slot-0",
+          "red-pick-2:slot-0",
+          "red-pick-3:slot-0",
+          "red-pick-4:slot-0",
+          "red-pick-5:slot-0"
+        ]
+      },
+      lineupPhaseStartedAt: "2026-05-30T12:00:10.000Z"
+    });
+    expect(lineupDraft.timer).toEqual({
+      isRunning: true,
+      phaseStartedAt: "2026-05-30T12:00:10.000Z",
+      remainingSeconds: 60,
+      originalSeconds: 60
+    });
+    expect(lineupDraft.history.some((entry) => entry.action === "FINAL_LINEUP_STARTED")).toBe(true);
+  });
+
+  it("supports same-side lineup swaps through reordered action IDs without changing picks or bans", () => {
+    const lineupDraft = createLineupDraft();
+    const originalBlueOrder = getFinalLineupActionIdsForSide(lineupDraft, "BLUE");
+    const originalRedOrder = getFinalLineupActionIdsForSide(lineupDraft, "RED");
+    const reorderedBlue = unwrap(
+      reorderFinalLineup(lineupDraft, {
+        side: "BLUE",
+        actionIds: [
+          "blue-pick-2:slot-0",
+          "blue-pick-1:slot-0",
+          "blue-pick-3:slot-0",
+          "blue-pick-4:slot-0",
+          "blue-pick-5:slot-0"
+        ],
+        now: "2026-05-30T12:00:20.000Z",
+        operatorId: "operator-1"
+      })
+    );
+    const reorderedRed = unwrap(
+      reorderFinalLineup(reorderedBlue, {
+        side: "RED",
+        actionIds: [
+          "red-pick-1:slot-0",
+          "red-pick-3:slot-0",
+          "red-pick-2:slot-0",
+          "red-pick-4:slot-0",
+          "red-pick-5:slot-0"
+        ],
+        now: "2026-05-30T12:00:25.000Z",
+        operatorId: "operator-1"
+      })
+    );
+
+    expect(getFinalLineupActionIdsForSide(reorderedRed, "BLUE")).toEqual([
+      "blue-pick-2:slot-0",
+      "blue-pick-1:slot-0",
+      "blue-pick-3:slot-0",
+      "blue-pick-4:slot-0",
+      "blue-pick-5:slot-0"
+    ]);
+    expect(getFinalLineupActionIdsForSide(reorderedRed, "RED")).toEqual([
+      "red-pick-1:slot-0",
+      "red-pick-3:slot-0",
+      "red-pick-2:slot-0",
+      "red-pick-4:slot-0",
+      "red-pick-5:slot-0"
+    ]);
+    expect(reorderedRed.pickedHeroIds).toEqual(lineupDraft.pickedHeroIds);
+    expect(reorderedRed.bannedHeroIds).toEqual([]);
+    expect(new Set(getFinalLineupActionIdsForSide(reorderedRed, "BLUE"))).toEqual(new Set(originalBlueOrder));
+    expect(new Set(getFinalLineupActionIdsForSide(reorderedRed, "RED"))).toEqual(new Set(originalRedOrder));
+    expect(reorderedRed.history.at(-1)?.action).toBe("FINAL_LINEUP_REORDERED");
+  });
+
+  it("rejects cross-team, duplicate, missing, and early final lineup reorder attempts without mutation", () => {
+    const lineupDraft = createLineupDraft();
+    const before = JSON.stringify(lineupDraft);
+    const crossTeam = reorderFinalLineup(lineupDraft, {
+      side: "BLUE",
+      actionIds: [
+        "blue-pick-1:slot-0",
+        "blue-pick-2:slot-0",
+        "blue-pick-3:slot-0",
+        "blue-pick-4:slot-0",
+        "red-pick-1:slot-0"
+      ]
+    });
+    const duplicate = reorderFinalLineup(lineupDraft, {
+      side: "RED",
+      actionIds: [
+        "red-pick-1:slot-0",
+        "red-pick-1:slot-0",
+        "red-pick-2:slot-0",
+        "red-pick-3:slot-0",
+        "red-pick-4:slot-0"
+      ]
+    });
+    const missing = reorderFinalLineup(lineupDraft, {
+      side: "BLUE",
+      actionIds: ["blue-pick-1:slot-0"]
+    });
+    const early = reorderFinalLineup(createLiveDraft(lineupRuleset), {
+      side: "BLUE",
+      actionIds: ["blue-pick-1:slot-0"]
+    });
+
+    expect(crossTeam.ok).toBe(false);
+    expect(crossTeam.error.code).toBe("draft-lineup-action-not-on-side");
+    expect(duplicate.ok).toBe(false);
+    expect(duplicate.error.code).toBe("draft-lineup-order-duplicate");
+    expect(missing.ok).toBe(false);
+    expect(missing.error.code).toBe("draft-lineup-order-length-invalid");
+    expect(early.ok).toBe(false);
+    expect(early.error.code).toBe("draft-lineup-not-ready");
+    expect(JSON.stringify(lineupDraft)).toBe(before);
+  });
+
+  it("resets one side to pick order and confirms the lineup before draft completion", () => {
+    const lineupDraft = createLineupDraft();
+    const reordered = unwrap(
+      reorderFinalLineup(lineupDraft, {
+        side: "BLUE",
+        actionIds: [
+          "blue-pick-2:slot-0",
+          "blue-pick-1:slot-0",
+          "blue-pick-3:slot-0",
+          "blue-pick-4:slot-0",
+          "blue-pick-5:slot-0"
+        ],
+        now: "2026-05-30T12:00:20.000Z"
+      })
+    );
+    const reset = unwrap(
+      resetFinalLineupSide(reordered, {
+        side: "BLUE",
+        now: "2026-05-30T12:00:25.000Z",
+        operatorId: "operator-1"
+      })
+    );
+    const unconfirmedComplete = completeDraft(reset, { confirmed: true, now: "2026-05-30T12:00:28.000Z" });
+    const confirmed = unwrap(
+      confirmFinalLineup(reset, {
+        confirmed: true,
+        now: "2026-05-30T12:00:30.000Z",
+        operatorId: "operator-1"
+      })
+    );
+
+    expect(getFinalLineupActionIdsForSide(reset, "BLUE")).toEqual([
+      "blue-pick-1:slot-0",
+      "blue-pick-2:slot-0",
+      "blue-pick-3:slot-0",
+      "blue-pick-4:slot-0",
+      "blue-pick-5:slot-0"
+    ]);
+    expect(reset.history.at(-1)?.action).toBe("FINAL_LINEUP_RESET");
+    expect(confirmed.finalLineup).toMatchObject({
+      status: "CONFIRMED",
+      lineupConfirmedAt: "2026-05-30T12:00:30.000Z",
+      confirmedByOperatorId: "operator-1"
+    });
+    expect(confirmed.timer.isRunning).toBe(false);
+
+    expect(unconfirmedComplete).toMatchObject({
+      ok: false,
+      error: {
+        code: "draft-lineup-unconfirmed"
+      }
+    });
+  });
+
+  it("does not mutate picks, bans, or lineup when the lineup timer reaches zero", () => {
+    const lineupDraft = createLineupDraft();
+    const timer = unwrap(
+      calculateTimerState({
+        timer: lineupDraft.timer,
+        now: "2026-05-30T12:01:11.000Z"
+      })
+    );
+
+    expect(timer).toEqual({
+      isRunning: false,
+      phaseStartedAt: undefined,
+      remainingSeconds: 0,
+      originalSeconds: 60
+    });
+    expect(lineupDraft.finalLineup?.status).toBe("ACTIVE");
+    expect(lineupDraft.pickedHeroIds).toHaveLength(10);
+    expect(lineupDraft.bannedHeroIds).toEqual([]);
   });
 });
 

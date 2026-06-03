@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import type { DraftAction, DraftActionType, Hero } from "@mmbt/shared-types";
+import type { DraftAction, DraftActionType, DraftLineupSide, DraftState, Hero } from "@mmbt/shared-types";
 
 import type { DashboardApiClient } from "../client/apiClient";
 import { toDashboardApiError } from "../client/apiClient";
@@ -25,7 +25,9 @@ import {
   getRulesetLabel,
   getSelectedMatch
 } from "../state/selectors";
+import { formatDraftActionSlotLabel } from "./actionLabels";
 import { heroMatchesSearch } from "./heroSearch";
+import { useDisplayedDraftTimer } from "./useDisplayedDraftTimer";
 
 type AsyncStatus = "idle" | "loading" | "ready" | "error";
 
@@ -45,6 +47,7 @@ interface PendingConfirmation {
 }
 
 const DRAFT_OPERATOR_PREFERRED_LOCALE = "zh-TW";
+const DRAFT_LINEUP_SIDES = ["BLUE", "RED"] as const satisfies readonly DraftLineupSide[];
 
 export interface DraftOperatorPanelProps {
   state: DashboardClientState;
@@ -96,12 +99,8 @@ function formatActionType(type: DraftActionType | string | undefined): string {
   }
 }
 
-function formatActionLabel(action: DraftAction | null | undefined): string {
-  if (!action) {
-    return "No action selected";
-  }
-
-  return `${formatSide(action.team)} ${formatActionType(action.type)} ${action.slotIndex + 1}`;
+function formatActionLabel(action: DraftAction | null | undefined, actions: readonly DraftAction[] = []): string {
+  return formatDraftActionSlotLabel(action, actions);
 }
 
 function getHeroName(heroById: Map<string, Hero>, heroId: string | null | undefined): string {
@@ -368,13 +367,14 @@ function DraftSelector(props: {
 
 function DraftSlotCard(props: {
   action: DraftAction;
+  allActions: readonly DraftAction[];
   heroById: Map<string, Hero>;
   isCurrent: boolean;
 }): ReactNode {
   return (
     <article className={`draft-slot-card${props.isCurrent ? " draft-slot-card--current" : ""}`}>
       <div>
-        <strong>{formatActionLabel(props.action)}</strong>
+        <strong>{formatActionLabel(props.action, props.allActions)}</strong>
         <span>{props.action.status}</span>
       </div>
       <p>{getHeroName(props.heroById, props.action.heroId)}</p>
@@ -385,6 +385,7 @@ function DraftSlotCard(props: {
 function DraftSlotGroup(props: {
   title: string;
   actions: DraftAction[];
+  allActions: readonly DraftAction[];
   heroById: Map<string, Hero>;
   currentActionIds: Set<string>;
 }): ReactNode {
@@ -399,6 +400,7 @@ function DraftSlotGroup(props: {
             <DraftSlotCard
               key={action.id}
               action={action}
+              allActions={props.allActions}
               heroById={props.heroById}
               isCurrent={props.currentActionIds.has(action.id)}
             />
@@ -406,6 +408,169 @@ function DraftSlotGroup(props: {
         </div>
       )}
     </div>
+  );
+}
+
+function getPickActionsForSide(draft: DraftState, side: DraftLineupSide): DraftAction[] {
+  return draft.actions.filter((action) => action.type === "PICK" && action.team === side);
+}
+
+function getLockedPickActionsForSide(draft: DraftState, side: DraftLineupSide): DraftAction[] {
+  return getPickActionsForSide(draft, side).filter((action) => action.status === "LOCKED" && action.heroId);
+}
+
+function hasLineupReadyPicks(draft: DraftState): boolean {
+  return DRAFT_LINEUP_SIDES.every((side) => {
+    const picks = getPickActionsForSide(draft, side);
+
+    return picks.length > 0 && picks.every((action) => action.status === "LOCKED" && action.heroId);
+  });
+}
+
+function getLineupActionIdsForSide(draft: DraftState, side: DraftLineupSide): string[] {
+  return draft.finalLineup?.finalLineupBySide[side]
+    ? [...(draft.finalLineup.finalLineupBySide[side] ?? [])]
+    : getLockedPickActionsForSide(draft, side).map((action) => action.id);
+}
+
+function getLineupActionsForSide(draft: DraftState, side: DraftLineupSide): DraftAction[] {
+  const actionsById = new Map(getLockedPickActionsForSide(draft, side).map((action) => [action.id, action]));
+
+  return getLineupActionIdsForSide(draft, side)
+    .map((actionId) => actionsById.get(actionId))
+    .filter((action): action is DraftAction => Boolean(action));
+}
+
+function moveLineupActionId(actionIds: readonly string[], actionId: string, direction: -1 | 1): string[] {
+  const currentIndex = actionIds.indexOf(actionId);
+  const nextIndex = currentIndex + direction;
+
+  if (currentIndex === -1 || nextIndex < 0 || nextIndex >= actionIds.length) {
+    return [...actionIds];
+  }
+
+  const nextActionIds = [...actionIds];
+  const current = nextActionIds[currentIndex];
+  const target = nextActionIds[nextIndex];
+
+  if (!current || !target) {
+    return nextActionIds;
+  }
+
+  nextActionIds[currentIndex] = target;
+  nextActionIds[nextIndex] = current;
+
+  return nextActionIds;
+}
+
+function swapLineupActionIds(actionIds: readonly string[], firstActionId: string, secondActionId: string): string[] {
+  const firstIndex = actionIds.indexOf(firstActionId);
+  const secondIndex = actionIds.indexOf(secondActionId);
+
+  if (firstIndex === -1 || secondIndex === -1 || firstIndex === secondIndex) {
+    return [...actionIds];
+  }
+
+  const nextActionIds = [...actionIds];
+  const first = nextActionIds[firstIndex];
+  const second = nextActionIds[secondIndex];
+
+  if (!first || !second) {
+    return nextActionIds;
+  }
+
+  nextActionIds[firstIndex] = second;
+  nextActionIds[secondIndex] = first;
+
+  return nextActionIds;
+}
+
+function LineupCard(props: {
+  action: DraftAction;
+  allActions: readonly DraftAction[];
+  heroById: Map<string, Hero>;
+  slotIndex: number;
+  confirmed: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  swapTargets: Array<{ actionId: string; label: string }>;
+  onSwap(targetActionId: string): void;
+  onMoveUp(): void;
+  onMoveDown(): void;
+}): ReactNode {
+  const hero = props.action.heroId ? props.heroById.get(props.action.heroId) : null;
+  const defaultSwapTargetId = props.swapTargets[0]?.actionId ?? "";
+  const [selectedSwapTargetId, setSelectedSwapTargetId] = useState(defaultSwapTargetId);
+
+  useEffect(() => {
+    if (!props.swapTargets.some((target) => target.actionId === selectedSwapTargetId)) {
+      setSelectedSwapTargetId(defaultSwapTargetId);
+    }
+  }, [defaultSwapTargetId, props.swapTargets, selectedSwapTargetId]);
+
+  return (
+    <article className={`lineup-card${props.confirmed ? " lineup-card--locked" : ""}`}>
+      <div className="lineup-card__header">
+        <strong>Lineup Slot {props.slotIndex + 1}</strong>
+        <span>{props.confirmed ? "Locked" : "Editable"}</span>
+      </div>
+      <div className="lineup-card__body">
+        {hero ? <HeroArtwork hero={hero} /> : null}
+        <div className="lineup-card__copy">
+          <strong>{hero ? getHeroPrimaryName(hero) : getHeroName(props.heroById, props.action.heroId)}</strong>
+          {hero && getHeroSecondaryName(hero) ? (
+            <span>{getHeroSecondaryName(hero)}</span>
+          ) : null}
+          <small>{formatActionLabel(props.action, props.allActions)}</small>
+        </div>
+      </div>
+      {props.confirmed ? null : (
+        <>
+          <div className="lineup-card__swap">
+            <label className="lineup-card__swap-label">
+              Swap with
+              <select
+                value={selectedSwapTargetId}
+                disabled={props.swapTargets.length === 0}
+                onChange={(event) => setSelectedSwapTargetId(event.currentTarget.value)}
+              >
+                {props.swapTargets.map((target) => (
+                  <option key={target.actionId} value={target.actionId}>
+                    {target.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={selectedSwapTargetId.length === 0}
+              onClick={() => props.onSwap(selectedSwapTargetId)}
+            >
+              Swap
+            </button>
+          </div>
+          <div className="lineup-card__actions">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!props.canMoveUp}
+              onClick={props.onMoveUp}
+            >
+              Move Up
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!props.canMoveDown}
+              onClick={props.onMoveDown}
+            >
+              Move Down
+            </button>
+          </div>
+        </>
+      )}
+    </article>
   );
 }
 
@@ -616,6 +781,9 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
   }, [props.apiClient, selectedGame?.gameCode]);
 
   const draft = draftDetail?.draft ?? null;
+  const authoritativeTimer = draft?.timer ?? selectedDraft?.timer ?? null;
+  const displayedTimer = useDisplayedDraftTimer(authoritativeTimer);
+
   const currentActionIds = useMemo(
     () => new Set(selectedDraft?.currentActionIds ?? draftDetail?.summary.currentActionIds ?? []),
     [draftDetail?.summary.currentActionIds, selectedDraft?.currentActionIds]
@@ -785,7 +953,10 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
 
     openConfirmation({
       title: "Lock Hero",
-      message: `Lock ${formatHeroDisplayLabel(selectedHero)} into ${formatActionLabel(activeAction)}. This changes final pick/ban state.`,
+      message: `Lock ${formatHeroDisplayLabel(selectedHero)} into ${formatActionLabel(
+        activeAction,
+        draft?.actions ?? currentActions
+      )}. This changes final pick/ban state.`,
       confirmLabel: "Lock Hero",
       reasonRequired: false,
       run: async () =>
@@ -892,6 +1063,80 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
     });
   }
 
+  async function reorderLineupSide(side: DraftLineupSide, actionIds: string[]): Promise<void> {
+    if (!selectedDraft) {
+      return;
+    }
+
+    await runMutation("Final lineup order accepted by server.", () =>
+      props.apiClient.post<DashboardDraftMutationResponse>(`/api/drafts/${selectedDraft.id}/lineup/reorder`, {
+        side,
+        actionIds,
+        operatorId: getOperatorId(operatorLabel)
+      })
+    );
+  }
+
+  async function moveLineupAction(side: DraftLineupSide, actionId: string, direction: -1 | 1): Promise<void> {
+    if (!draft) {
+      return;
+    }
+
+    const currentOrder = getLineupActionIdsForSide(draft, side);
+    const nextOrder = moveLineupActionId(currentOrder, actionId, direction);
+
+    if (nextOrder.join("|") === currentOrder.join("|")) {
+      return;
+    }
+
+    await reorderLineupSide(side, nextOrder);
+  }
+
+  async function swapLineupAction(
+    side: DraftLineupSide,
+    firstActionId: string,
+    secondActionId: string
+  ): Promise<void> {
+    if (!draft) {
+      return;
+    }
+
+    const currentOrder = getLineupActionIdsForSide(draft, side);
+    const nextOrder = swapLineupActionIds(currentOrder, firstActionId, secondActionId);
+
+    if (nextOrder.join("|") === currentOrder.join("|")) {
+      return;
+    }
+
+    await reorderLineupSide(side, nextOrder);
+  }
+
+  async function resetLineupSide(side: DraftLineupSide): Promise<void> {
+    if (!selectedDraft) {
+      return;
+    }
+
+    await runMutation("Final lineup side reset to pick order.", () =>
+      props.apiClient.post<DashboardDraftMutationResponse>(`/api/drafts/${selectedDraft.id}/lineup/reset`, {
+        side,
+        operatorId: getOperatorId(operatorLabel)
+      })
+    );
+  }
+
+  async function confirmFinalLineup(): Promise<void> {
+    if (!selectedDraft) {
+      return;
+    }
+
+    await runMutation("Final lineup confirmed and locked.", () =>
+      props.apiClient.post<DashboardDraftMutationResponse>(`/api/drafts/${selectedDraft.id}/lineup/confirm`, {
+        operatorId: getOperatorId(operatorLabel),
+        confirm: true
+      })
+    );
+  }
+
   async function confirmPendingAction(): Promise<void> {
     const pending = pendingConfirmation;
 
@@ -913,6 +1158,9 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
 
   const banActions = draft?.actions.filter((action) => action.type === "BAN") ?? [];
   const pickActions = draft?.actions.filter((action) => action.type === "PICK") ?? [];
+  const lineupVisible = Boolean(selectedDraft?.finalLineup || (draft && (draft.finalLineup || hasLineupReadyPicks(draft))));
+  const lineupConfirmed = (draft?.finalLineup?.status ?? selectedDraft?.finalLineup?.status) === "CONFIRMED";
+  const draftActionWorkspaceVisible = !lineupVisible;
 
   return (
     <div className="stack">
@@ -997,7 +1245,7 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
           <Metric label="Current phase" value={phaseLabel} />
           <Metric label="Team turn" value={formatSide(selectedDraft?.currentPhase?.team)} />
           <Metric label="Action type" value={formatActionType(selectedDraft?.currentPhase?.type)} />
-          <Metric label="Timer" value={formatDuration(selectedDraft?.timer.remainingSeconds)} />
+          {lineupVisible ? null : <Metric label="Timer" value={formatDuration(displayedTimer.remainingSeconds)} />}
           <Metric label="Ruleset" value={getRulesetLabel(snapshot, selectedGame?.rulesetId ?? selectedDraft?.rulesetId)} />
         </dl>
 
@@ -1011,175 +1259,274 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
         ) : null}
       </Section>
 
-      <Section title="Manual Controls">
-        <div className="operator-controls">
-          <button
-            className="secondary-button"
-            type="button"
-            disabled={!selectedDraft || mutationBusy || selectedDraft.status === "LIVE"}
-            onClick={confirmStart}
-          >
-            Start Draft
-          </button>
-          <button
-            className="secondary-button"
-            type="button"
-            disabled={!selectedDraft || mutationBusy || selectedDraft.status !== "LIVE"}
-            onClick={() => void pauseDraft()}
-          >
-            Pause Draft
-          </button>
-          <button
-            className="secondary-button"
-            type="button"
-            disabled={!selectedDraft || mutationBusy || selectedDraft.status !== "PAUSED"}
-            onClick={() => void resumeDraft()}
-          >
-            Resume Draft
-          </button>
-          <button className="secondary-button" type="button" disabled={!selectedDraft || mutationBusy} onClick={confirmUndo}>
-            Undo
-          </button>
-          <button className="secondary-button" type="button" disabled={!selectedDraft || mutationBusy} onClick={confirmRedo}>
-            Redo
-          </button>
-          <button className="danger-button" type="button" disabled={!selectedDraft || mutationBusy} onClick={confirmReset}>
-            Reset Draft
-          </button>
-          <button className="danger-button" type="button" disabled={!selectedDraft || mutationBusy} onClick={confirmComplete}>
-            Complete Draft
-          </button>
-        </div>
-      </Section>
-
-      <Section title="Current Action">
-        {draftLoadStatus === "loading" ? <p className="empty-state">Loading full draft slots.</p> : null}
-        <div className="operator-selector-grid">
-          <label className="field-label">
-            Action slot
-            <select
-              value={activeAction?.id ?? ""}
-              onChange={(event) => setSelectedActionId(event.currentTarget.value)}
-              disabled={currentActions.length === 0}
+      {draftActionWorkspaceVisible ? (
+        <Section title="Manual Controls">
+          <div className="operator-controls">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!selectedDraft || mutationBusy || selectedDraft.status === "LIVE"}
+              onClick={confirmStart}
             >
-              {currentActions.length === 0 ? <option value="">No current action</option> : null}
-              {currentActions.map((action) => (
-                <option key={action.id} value={action.id}>
-                  {formatActionLabel(action)} - {action.status}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Metric label="Side" value={formatSide(activeAction?.team)} />
-          <Metric label="Type" value={formatActionType(activeAction?.type)} />
-          <Metric label="Selected entity" value={selectedHero ? formatHeroDisplayLabel(selectedHero) : "None"} />
-        </div>
-
-        <div className="operator-controls">
-          <button
-            className="secondary-button"
-            type="button"
-            disabled={!canHover || mutationBusy}
-            onClick={() => void hoverHero()}
-          >
-            Hover Selected
-          </button>
-          <button
-            className="danger-button"
-            type="button"
-            disabled={!canLock || mutationBusy}
-            onClick={confirmLock}
-          >
-            Lock Selected
-          </button>
-        </div>
-        {currentHeroIsLocked && !allowDuplicateHeroes ? (
-          <p className="inline-warning">Selected entity is already locked in this draft; the server will reject duplicates.</p>
-        ) : null}
-      </Section>
-
-      <Section title="Entity List">
-        <label className="field-label field-label--narrow">
-          Hero search
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.currentTarget.value)}
-            placeholder="Search heroes, aliases, roles, or local IDs"
-          />
-        </label>
-        <p className="entity-list-count">
-          Showing {filteredHeroes.length} of {adapterDetail?.heroes.length ?? 0} local entities
-          {adapterDetail ? ` from ${adapterDetail.displayName}` : ""}.
-        </p>
-        {adapterLoadStatus === "loading" ? <p className="empty-state">Loading local adapter entities.</p> : null}
-        {filteredHeroes.length === 0 ? (
-          <p className="empty-state">No selectable entities match the current search.</p>
-        ) : (
-          <div className="hero-grid" role="list" aria-label="Selectable heroes">
-            {filteredHeroes.map((hero) => {
-              const locked = lockedHeroIds.has(hero.id);
-
-              return (
-                <button
-                  className="hero-button"
-                  aria-pressed={selectedHeroId === hero.id}
-                  key={hero.id}
-                  type="button"
-                  aria-label={formatHeroDisplayLabel(hero)}
-                  data-hero-id={hero.id}
-                  onClick={() => setSelectedHeroId(hero.id)}
-                >
-                  <HeroArtwork hero={hero} />
-                  <span className="hero-button__copy">
-                    <strong>{getHeroPrimaryName(hero)}</strong>
-                    {getHeroSecondaryName(hero) ? (
-                      <span className="hero-button__secondary">{getHeroSecondaryName(hero)}</span>
-                    ) : null}
-                    <span className="hero-button__roles">{hero.roleTags?.join(", ") ?? "No role tags"}</span>
-                  </span>
-                  {locked ? <span className="hero-button__locked">Locked</span> : null}
-                </button>
-              );
-            })}
+              Start Draft
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!selectedDraft || mutationBusy || selectedDraft.status !== "LIVE"}
+              onClick={() => void pauseDraft()}
+            >
+              Pause Draft
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!selectedDraft || mutationBusy || selectedDraft.status !== "PAUSED"}
+              onClick={() => void resumeDraft()}
+            >
+              Resume Draft
+            </button>
+            <button className="secondary-button" type="button" disabled={!selectedDraft || mutationBusy} onClick={confirmUndo}>
+              Undo
+            </button>
+            <button className="secondary-button" type="button" disabled={!selectedDraft || mutationBusy} onClick={confirmRedo}>
+              Redo
+            </button>
+            <button className="danger-button" type="button" disabled={!selectedDraft || mutationBusy} onClick={confirmReset}>
+              Reset Draft
+            </button>
+            <button className="danger-button" type="button" disabled={!selectedDraft || mutationBusy} onClick={confirmComplete}>
+              Complete Draft
+            </button>
           </div>
-        )}
-      </Section>
+        </Section>
+      ) : null}
 
-      <Section title="Slots and History">
-        {draft ? (
+      {draft && lineupVisible ? (
+        <Section
+          title="Final Lineup"
+          actions={
+            lineupConfirmed ? undefined : (
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={mutationBusy}
+                onClick={() => void confirmFinalLineup()}
+              >
+                Confirm Final Lineup
+              </button>
+            )
+          }
+        >
           <div className="stack">
-            <DraftSlotGroup
-              title="Ban Slots"
-              actions={banActions}
-              heroById={heroById}
-              currentActionIds={currentActionIds}
-            />
-            <DraftSlotGroup
-              title="Pick Slots"
-              actions={pickActions}
-              heroById={heroById}
-              currentActionIds={currentActionIds}
-            />
-            <div>
-              <h3 className="subsection-title">Recent History</h3>
-              {actionHistory.length === 0 ? (
-                <p className="empty-state">No draft history has been recorded yet.</p>
-              ) : (
-                <ul className="detail-list">
-                  {actionHistory.map((entry) => (
-                    <li key={entry.id}>
-                      <strong>{entry.action}</strong>
-                      <span>{formatDateTime(entry.timestamp)}</span>
-                    </li>
-                  ))}
-                </ul>
+            <dl className="metric-grid">
+              <Metric label="Lineup status" value={draft.finalLineup?.status ?? "ACTIVE"} />
+              {lineupConfirmed ? null : (
+                <Metric label="Lineup timer" value={formatDuration(displayedTimer.remainingSeconds)} />
               )}
+              <Metric
+                label="Lineup started"
+                value={draft.finalLineup?.lineupPhaseStartedAt ? formatDateTime(draft.finalLineup.lineupPhaseStartedAt) : "Pending"}
+              />
+              <Metric
+                label="Lineup confirmed"
+                value={draft.finalLineup?.lineupConfirmedAt ? formatDateTime(draft.finalLineup.lineupConfirmedAt) : "Not confirmed"}
+              />
+            </dl>
+            {lineupConfirmed ? (
+              <p className="inline-success lineup-review-state">Final lineup is confirmed and locked.</p>
+            ) : (
+              <p className="inline-warning">Reorder each side using only that side's locked picks.</p>
+            )}
+            <div className="lineup-side-grid">
+              {DRAFT_LINEUP_SIDES.map((side) => {
+                const lineupActions = getLineupActionsForSide(draft, side);
+                const sideLabel = formatSide(side);
+
+                return (
+                  <div className="lineup-side" key={side}>
+                    <div className="lineup-side__header">
+                      <h3 className="subsection-title">{sideLabel} Lineup</h3>
+                      {lineupConfirmed ? null : (
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          disabled={mutationBusy}
+                          onClick={() => void resetLineupSide(side)}
+                        >
+                          Reset {sideLabel}
+                        </button>
+                      )}
+                    </div>
+                    <div className="lineup-card-grid">
+                      {lineupActions.map((action, index) => {
+                        const swapTargets = lineupActions
+                          .map((targetAction, targetIndex) => ({
+                            actionId: targetAction.id,
+                            label: `Slot ${targetIndex + 1} - ${getHeroName(heroById, targetAction.heroId)}`
+                          }))
+                          .filter((target) => target.actionId !== action.id);
+
+                        return (
+                          <LineupCard
+                            key={action.id}
+                            action={action}
+                            allActions={draft.actions}
+                            heroById={heroById}
+                            slotIndex={index}
+                            confirmed={lineupConfirmed}
+                            canMoveUp={!mutationBusy && index > 0}
+                            canMoveDown={!mutationBusy && index < lineupActions.length - 1}
+                            swapTargets={swapTargets}
+                            onSwap={(targetActionId) => void swapLineupAction(side, action.id, targetActionId)}
+                            onMoveUp={() => void moveLineupAction(side, action.id, -1)}
+                            onMoveDown={() => void moveLineupAction(side, action.id, 1)}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        ) : (
-          <p className="empty-state">Select a loaded draft to view action slots and history.</p>
-        )}
-      </Section>
+        </Section>
+      ) : null}
+
+      {draftActionWorkspaceVisible ? (
+        <>
+          <Section title="Current Action">
+            {draftLoadStatus === "loading" ? <p className="empty-state">Loading full draft slots.</p> : null}
+            <div className="operator-selector-grid">
+              <label className="field-label">
+                Action slot
+                <select
+                  value={activeAction?.id ?? ""}
+                  onChange={(event) => setSelectedActionId(event.currentTarget.value)}
+                  disabled={currentActions.length === 0}
+                >
+                  {currentActions.length === 0 ? <option value="">No current action</option> : null}
+                  {currentActions.map((action) => (
+                    <option key={action.id} value={action.id}>
+                      {formatActionLabel(action, draft?.actions ?? currentActions)} - {action.status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Metric label="Side" value={formatSide(activeAction?.team)} />
+              <Metric label="Type" value={formatActionType(activeAction?.type)} />
+              <Metric label="Selected entity" value={selectedHero ? formatHeroDisplayLabel(selectedHero) : "None"} />
+            </div>
+
+            <div className="operator-controls">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={!canHover || mutationBusy}
+                onClick={() => void hoverHero()}
+              >
+                Hover Selected
+              </button>
+              <button
+                className="danger-button"
+                type="button"
+                disabled={!canLock || mutationBusy}
+                onClick={confirmLock}
+              >
+                Lock Selected
+              </button>
+            </div>
+            {currentHeroIsLocked && !allowDuplicateHeroes ? (
+              <p className="inline-warning">Selected entity is already locked in this draft; the server will reject duplicates.</p>
+            ) : null}
+          </Section>
+
+          <Section title="Entity List">
+            <label className="field-label field-label--narrow">
+              Hero search
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                placeholder="Search heroes, aliases, roles, or local IDs"
+              />
+            </label>
+            <p className="entity-list-count">
+              Showing {filteredHeroes.length} of {adapterDetail?.heroes.length ?? 0} local entities
+              {adapterDetail ? ` from ${adapterDetail.displayName}` : ""}.
+            </p>
+            {adapterLoadStatus === "loading" ? <p className="empty-state">Loading local adapter entities.</p> : null}
+            {filteredHeroes.length === 0 ? (
+              <p className="empty-state">No selectable entities match the current search.</p>
+            ) : (
+              <div className="hero-grid" role="list" aria-label="Selectable heroes">
+                {filteredHeroes.map((hero) => {
+                  const locked = lockedHeroIds.has(hero.id);
+
+                  return (
+                    <button
+                      className="hero-button"
+                      aria-pressed={selectedHeroId === hero.id}
+                      key={hero.id}
+                      type="button"
+                      aria-label={formatHeroDisplayLabel(hero)}
+                      data-hero-id={hero.id}
+                      onClick={() => setSelectedHeroId(hero.id)}
+                    >
+                      <HeroArtwork hero={hero} />
+                      <span className="hero-button__copy">
+                        <strong>{getHeroPrimaryName(hero)}</strong>
+                        {getHeroSecondaryName(hero) ? (
+                          <span className="hero-button__secondary">{getHeroSecondaryName(hero)}</span>
+                        ) : null}
+                        <span className="hero-button__roles">{hero.roleTags?.join(", ") ?? "No role tags"}</span>
+                      </span>
+                      {locked ? <span className="hero-button__locked">Locked</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
+
+          <Section title="Slots and History">
+            {draft ? (
+              <div className="stack">
+                <DraftSlotGroup
+                  title="Ban Slots"
+                  actions={banActions}
+                  allActions={draft.actions}
+                  heroById={heroById}
+                  currentActionIds={currentActionIds}
+                />
+                <DraftSlotGroup
+                  title="Pick Slots"
+                  actions={pickActions}
+                  allActions={draft.actions}
+                  heroById={heroById}
+                  currentActionIds={currentActionIds}
+                />
+                <div>
+                  <h3 className="subsection-title">Recent History</h3>
+                  {actionHistory.length === 0 ? (
+                    <p className="empty-state">No draft history has been recorded yet.</p>
+                  ) : (
+                    <ul className="detail-list">
+                      {actionHistory.map((entry) => (
+                        <li key={entry.id}>
+                          <strong>{entry.action}</strong>
+                          <span>{formatDateTime(entry.timestamp)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="empty-state">Select a loaded draft to view action slots and history.</p>
+            )}
+          </Section>
+        </>
+      ) : null}
 
       <ConfirmationDialog
         pending={pendingConfirmation}

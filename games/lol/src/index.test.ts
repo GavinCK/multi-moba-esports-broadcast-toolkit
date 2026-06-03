@@ -283,6 +283,20 @@ describe("LoL static manual sample adapter", () => {
     expect(pickSlots).toBe(10);
   });
 
+  it("keeps every normal LoL pick phase at 30 seconds even when the phase has multiple picks", () => {
+    const pickPhases = LOL_SAMPLE_STANDARD_RULESET.phases.filter((phase) => phase.type === "PICK");
+    const multiPickPhases = pickPhases.filter((phase) => phase.count > 1);
+
+    expect(pickPhases).toHaveLength(7);
+    expect(multiPickPhases.map((phase) => phase.id)).toEqual([
+      "pick-red-1-2",
+      "pick-blue-2-3",
+      "pick-blue-4-5"
+    ]);
+    expect(pickPhases.every((phase) => phase.timeSeconds === 30)).toBe(true);
+    expect(multiPickPhases.every((phase) => phase.timeSeconds === 30)).toBe(true);
+  });
+
   it("rejects rulesets that are not compatible with the static sample pool", () => {
     const wrongGameRuleset = {
       ...LOL_SAMPLE_STANDARD_RULESET,

@@ -1,5 +1,6 @@
 import type {
   DraftRuleset,
+  DraftFinalLineupState,
   DraftState,
   DraftPhaseDefinition,
   DraftTimerState,
@@ -94,6 +95,7 @@ export interface DashboardDraftSummary {
   lockedHeroIds: string[];
   bannedHeroIds: string[];
   pickedHeroIds: string[];
+  finalLineup?: DraftFinalLineupState;
   updatedAt?: string;
 }
 

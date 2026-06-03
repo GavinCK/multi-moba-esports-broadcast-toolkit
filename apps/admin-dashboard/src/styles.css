@@ -604,6 +604,114 @@ th {
   overflow-wrap: anywhere;
 }
 
+.lineup-side-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lineup-side {
+  min-width: 0;
+}
+
+.lineup-side__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.lineup-card-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr;
+}
+
+.lineup-card {
+  min-height: 126px;
+  border: 1px solid #d9e0e8;
+  border-radius: 8px;
+  background: #fbfcfe;
+  padding: 10px;
+}
+
+.lineup-card--locked {
+  border-color: #b8c4d2;
+  background: #ffffff;
+}
+
+.lineup-card__header,
+.lineup-card__actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lineup-card__actions {
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.lineup-card__header span,
+.lineup-card__copy span,
+.lineup-card__copy small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lineup-card__body {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  margin: 10px 0;
+}
+
+.lineup-card__copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.lineup-card__copy strong,
+.lineup-card__copy span,
+.lineup-card__copy small {
+  overflow-wrap: anywhere;
+}
+
+.lineup-card__swap {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  margin-top: 8px;
+}
+
+.lineup-card__swap-label {
+  min-width: 0;
+  color: #64748b;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.lineup-card__swap-label select {
+  width: 100%;
+  min-width: 0;
+  text-transform: none;
+}
+
+.lineup-review-state {
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+  padding: 10px 12px;
+}
+
 .producer-graphic-card {
   min-height: 180px;
 }
@@ -667,6 +775,7 @@ th {
   .card-grid,
   .draft-slot-grid,
   .hero-grid,
+  .lineup-side-grid,
   .section-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -686,6 +795,7 @@ th {
   .card-grid--two,
   .draft-slot-grid,
   .hero-grid,
+  .lineup-side-grid,
   .metric-grid,
   .operator-selector-grid,
   .section-grid {

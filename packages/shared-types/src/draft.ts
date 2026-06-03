@@ -57,6 +57,19 @@ export type DraftStatus =
   | "COMPLETE"
   | "CANCELLED";
 
+export type DraftLineupSide = Extract<TeamSide, "BLUE" | "RED">;
+
+export type DraftFinalLineupStatus = "ACTIVE" | "CONFIRMED";
+
+export interface DraftFinalLineupState {
+  status: DraftFinalLineupStatus;
+  finalLineupBySide: Partial<Record<DraftLineupSide, string[]>>;
+  lineupPhaseStartedAt?: string;
+  lineupConfirmedAt?: string;
+  confirmedByOperatorId?: string;
+  updatedAt?: string;
+}
+
 export interface DraftState {
   id: string;
   gameId: string;
@@ -69,6 +82,7 @@ export interface DraftState {
   lockedHeroIds: string[];
   bannedHeroIds: string[];
   pickedHeroIds: string[];
+  finalLineup?: DraftFinalLineupState;
   history: DraftHistoryEntry[];
   createdAt?: string;
   updatedAt?: string;

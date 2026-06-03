@@ -4,11 +4,14 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
 
 import {
   completeDraft,
+  confirmFinalLineup,
   hoverHero,
   lockHero,
   pauseDraft,
   redoLastUndoneAction,
+  reorderFinalLineup,
   resetDraft,
+  resetFinalLineupSide,
   resumeDraft,
   startDraft,
   undoLastAction,
@@ -29,7 +32,7 @@ import {
   type ProductionEngineResult,
   type ProductionRuntimeState
 } from "@mmbt/core-production";
-import type { DraftState, JsonObject, JsonValue } from "@mmbt/shared-types";
+import type { DraftLineupSide, DraftState, JsonObject, JsonValue } from "@mmbt/shared-types";
 
 import {
   appendAuditLogEntry,
@@ -334,7 +337,14 @@ function getDraftEngineErrorStatus(error: DraftEngineError): number {
     return 404;
   }
 
-  if (error.code === "draft-hero-required") {
+  if (
+    error.code === "draft-hero-required" ||
+    error.code === "draft-lineup-side-invalid" ||
+    error.code === "draft-lineup-order-required" ||
+    error.code === "draft-lineup-order-length-invalid" ||
+    error.code === "draft-lineup-order-duplicate" ||
+    error.code === "draft-lineup-action-not-on-side"
+  ) {
     return 400;
   }
 
@@ -351,7 +361,18 @@ function getDraftEngineErrorCode(error: DraftEngineError): string {
     case "draft-duplicate-hover":
       return "DRAFT_DUPLICATE_HERO";
     case "draft-hero-required":
+    case "draft-lineup-side-invalid":
+    case "draft-lineup-order-required":
+    case "draft-lineup-order-length-invalid":
+    case "draft-lineup-order-duplicate":
+    case "draft-lineup-action-not-on-side":
       return "DRAFT_INVALID_PAYLOAD";
+    case "draft-lineup-not-ready":
+    case "draft-lineup-side-not-ready":
+    case "draft-lineup-confirmed":
+    case "draft-lineup-unconfirmed":
+    case "draft-lineup-active":
+      return "DRAFT_LINEUP_INVALID";
     case "draft-incomplete":
       return "DRAFT_INCOMPLETE";
     case "draft-ruleset-invalid":
@@ -506,11 +527,28 @@ interface RealtimeDraftSnapshot {
 
 function createRealtimeDraftSnapshot(entry: DraftRuntimeEntry): RealtimeDraftSnapshot {
   const snapshot = createDraftSnapshot(entry);
+  const finalLineup = snapshot.draft.finalLineup
+    ? {
+        status: snapshot.draft.finalLineup.status,
+        finalLineupBySide: {
+          BLUE: snapshot.draft.finalLineup.finalLineupBySide.BLUE
+            ? [...snapshot.draft.finalLineup.finalLineupBySide.BLUE]
+            : undefined,
+          RED: snapshot.draft.finalLineup.finalLineupBySide.RED
+            ? [...snapshot.draft.finalLineup.finalLineupBySide.RED]
+            : undefined
+        },
+        lineupPhaseStartedAt: snapshot.draft.finalLineup.lineupPhaseStartedAt,
+        lineupConfirmedAt: snapshot.draft.finalLineup.lineupConfirmedAt,
+        updatedAt: snapshot.draft.finalLineup.updatedAt
+      }
+    : undefined;
 
   return {
     summary: snapshot.summary,
     draft: {
       ...snapshot.draft,
+      finalLineup,
       actions: snapshot.draft.actions.map((action) => {
         const { operatorId: _operatorId, ...publicAction } = action;
 
@@ -568,6 +606,9 @@ function shouldBroadcastDraftTimer(previousDraft: DraftState, nextDraft: DraftSt
     event === "DRAFT_PAUSED" ||
     event === "DRAFT_RESUMED" ||
     event === "DRAFT_RESET" ||
+    event === "DRAFT_LINEUP_REORDERED" ||
+    event === "DRAFT_LINEUP_RESET" ||
+    event === "DRAFT_LINEUP_CONFIRMED" ||
     previousDraft.currentPhaseIndex !== nextDraft.currentPhaseIndex ||
     previousDraft.timer.isRunning !== nextDraft.timer.isRunning ||
     previousDraft.timer.remainingSeconds !== nextDraft.timer.remainingSeconds ||
@@ -1164,6 +1205,45 @@ function validateHeroPayload(
   return heroId;
 }
 
+function readLineupSide(payload: Record<string, unknown>): DraftLineupSide | AppError {
+  const side = payload.side;
+
+  if (side !== "BLUE" && side !== "RED") {
+    return {
+      code: "DRAFT_INVALID_PAYLOAD",
+      message: "Final lineup payload side must be BLUE or RED.",
+      httpStatus: 400,
+      details: { field: "side" }
+    };
+  }
+
+  return side;
+}
+
+function readLineupActionIds(payload: Record<string, unknown>): string[] | AppError {
+  if (!Array.isArray(payload.actionIds)) {
+    return {
+      code: "DRAFT_INVALID_PAYLOAD",
+      message: "Final lineup reorder requires actionIds as an array of non-empty strings.",
+      httpStatus: 400,
+      details: { field: "actionIds" }
+    };
+  }
+
+  const actionIds = payload.actionIds.map((value) => (typeof value === "string" ? value.trim() : ""));
+
+  if (actionIds.some((value) => value.length === 0)) {
+    return {
+      code: "DRAFT_INVALID_PAYLOAD",
+      message: "Final lineup actionIds must contain only non-empty strings.",
+      httpStatus: 400,
+      details: { field: "actionIds" }
+    };
+  }
+
+  return actionIds;
+}
+
 function isAppError(value: unknown): value is AppError {
   return (
     isRecord(value) &&
@@ -1361,6 +1441,103 @@ async function handleDraftPost(
       }
     );
     return;
+  }
+
+  if (operation === "lineup" && pathParts.length === 5) {
+    const lineupOperation = pathParts[4];
+
+    if (lineupOperation === "reorder") {
+      const side = readLineupSide(payload);
+      const actionIds = readLineupActionIds(payload);
+
+      for (const value of [side, actionIds]) {
+        if (isAppError(value)) {
+          sendError(response, value);
+          return;
+        }
+      }
+
+      applyDraftResult(
+        response,
+        runtimeState,
+        realtime,
+        entry,
+        reorderFinalLineup(entry.draft, {
+          side: side as DraftLineupSide,
+          actionIds: actionIds as string[],
+          now: timestamp,
+          operatorId
+        }),
+        {
+          event: "DRAFT_LINEUP_REORDERED",
+          operatorId,
+          timestamp,
+          metadata: createPayloadMetadata(payload, {
+            side,
+            actionIds
+          })
+        }
+      );
+      return;
+    }
+
+    if (lineupOperation === "reset") {
+      const side = readLineupSide(payload);
+
+      if (isAppError(side)) {
+        sendError(response, side);
+        return;
+      }
+
+      applyDraftResult(
+        response,
+        runtimeState,
+        realtime,
+        entry,
+        resetFinalLineupSide(entry.draft, {
+          side,
+          now: timestamp,
+          operatorId
+        }),
+        {
+          event: "DRAFT_LINEUP_RESET",
+          operatorId,
+          timestamp,
+          metadata: createPayloadMetadata(payload, {
+            side
+          })
+        }
+      );
+      return;
+    }
+
+    if (lineupOperation === "confirm") {
+      const confirmationError = validateConfirm(payload, "Confirm final lineup");
+
+      if (confirmationError) {
+        sendError(response, confirmationError);
+        return;
+      }
+
+      applyDraftResult(
+        response,
+        runtimeState,
+        realtime,
+        entry,
+        confirmFinalLineup(entry.draft, {
+          confirmed: true,
+          now: timestamp,
+          operatorId
+        }),
+        {
+          event: "DRAFT_LINEUP_CONFIRMED",
+          operatorId,
+          timestamp,
+          metadata: createPayloadMetadata(payload)
+        }
+      );
+      return;
+    }
   }
 
   if (operation === "actions" && pathParts.length === 6) {

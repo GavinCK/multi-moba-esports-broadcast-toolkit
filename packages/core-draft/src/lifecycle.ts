@@ -12,6 +12,7 @@ import type {
 
 import { COMPLETE_ACTION_STATUSES } from "./constants.js";
 import { fail, ok, type DraftEngineResult } from "./errors.js";
+import { isFinalLineupConfirmed } from "./lineup.js";
 import { createTimerForPhase, pauseTimer, resumeTimer } from "./timer.js";
 import { validateDraftRuleset } from "./validation.js";
 
@@ -357,6 +358,7 @@ export function resetDraft(
     lockedHeroIds: [],
     bannedHeroIds: [],
     pickedHeroIds: [],
+    finalLineup: undefined,
     history,
     updatedAt: timestamp
   });
@@ -386,6 +388,13 @@ export function completeDraft(
     return fail({
       code: "draft-incomplete",
       message: "Draft cannot be completed while required action slots are incomplete."
+    });
+  }
+
+  if (state.finalLineup && !isFinalLineupConfirmed(state)) {
+    return fail({
+      code: "draft-lineup-unconfirmed",
+      message: "Draft cannot be completed until the final lineup is confirmed."
     });
   }
 

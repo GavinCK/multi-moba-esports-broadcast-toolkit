@@ -11,6 +11,7 @@ import type {
   DashboardMatch,
   DashboardRuntimeState
 } from "../client/types";
+import { useDisplayedDraftTimer } from "../draft/useDisplayedDraftTimer";
 import type { DashboardClientState, DashboardSocketStatus } from "../state/dashboardState";
 import {
   findTeam,
@@ -412,6 +413,8 @@ export function CasterPanel(props: CasterPanelProps): ReactNode {
     };
   }, [props.apiClient, selectedGame?.gameCode]);
 
+  const displayedTimer = useDisplayedDraftTimer(selectedDraft?.timer);
+
   async function refreshPanel(): Promise<void> {
     await Promise.resolve(props.onRefresh());
   }
@@ -580,7 +583,7 @@ export function CasterPanel(props: CasterPanelProps): ReactNode {
             <Metric label="Draft" value={selectedDraft.id} />
             <Metric label="Phase" value={phaseLabel} />
             <Metric label="Turn" value={formatSide(selectedDraft.currentPhase?.team)} />
-            <Metric label="Timer" value={formatDuration(selectedDraft.timer.remainingSeconds)} />
+            <Metric label="Timer" value={formatDuration(displayedTimer.remainingSeconds)} />
             <Metric label="Finalized actions" value={`${selectedDraft.actionCounts.locked} / ${selectedDraft.actionCounts.total}`} />
             <Metric label="Bans reported" value={selectedDraft.bannedHeroIds.length} />
             <Metric label="Picks reported" value={selectedDraft.pickedHeroIds.length} />

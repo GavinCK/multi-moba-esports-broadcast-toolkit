@@ -6,6 +6,7 @@ import {
 import type {
   DraftAction,
   DraftActionType,
+  DraftFinalLineupState,
   DraftPhaseDefinition,
   DraftRuleset,
   DraftState,
@@ -55,6 +56,7 @@ export interface DraftSummary {
   lockedHeroIds: string[];
   bannedHeroIds: string[];
   pickedHeroIds: string[];
+  finalLineup?: DraftFinalLineupState;
   updatedAt?: string;
 }
 
@@ -77,6 +79,8 @@ export interface DraftMutationSummary {
   actionType?: DraftActionType;
   team?: TeamSide | "NONE";
   heroId?: string | null;
+  finalLineupStatus?: DraftFinalLineupState["status"];
+  finalLineupBySide?: DraftFinalLineupState["finalLineupBySide"];
   lockedHeroCount: number;
   bannedHeroCount: number;
   pickedHeroCount: number;
@@ -99,6 +103,21 @@ export interface CreateDraftRuntimeEntryOptions {
 
 function cloneDraftState(draft: DraftState): DraftState {
   return JSON.parse(JSON.stringify(draft)) as DraftState;
+}
+
+function cloneFinalLineup(finalLineup: DraftFinalLineupState | undefined): DraftFinalLineupState | undefined {
+  return finalLineup
+    ? {
+        status: finalLineup.status,
+        finalLineupBySide: {
+          BLUE: finalLineup.finalLineupBySide.BLUE ? [...finalLineup.finalLineupBySide.BLUE] : undefined,
+          RED: finalLineup.finalLineupBySide.RED ? [...finalLineup.finalLineupBySide.RED] : undefined
+        },
+        lineupPhaseStartedAt: finalLineup.lineupPhaseStartedAt,
+        lineupConfirmedAt: finalLineup.lineupConfirmedAt,
+        updatedAt: finalLineup.updatedAt
+      }
+    : undefined;
 }
 
 function cloneRuleset(ruleset: DraftRuleset): DraftRuleset {
@@ -236,6 +255,7 @@ export function createDraftSummary(entry: DraftRuntimeEntry): DraftSummary {
     lockedHeroIds: [...entry.draft.lockedHeroIds],
     bannedHeroIds: [...entry.draft.bannedHeroIds],
     pickedHeroIds: [...entry.draft.pickedHeroIds],
+    finalLineup: cloneFinalLineup(entry.draft.finalLineup),
     updatedAt: entry.draft.updatedAt
   };
 }
@@ -315,6 +335,8 @@ export function createDraftMutationSummary(
     actionType: action?.type,
     team: action?.team,
     heroId: action?.heroId,
+    finalLineupStatus: entry.draft.finalLineup?.status,
+    finalLineupBySide: cloneFinalLineup(entry.draft.finalLineup)?.finalLineupBySide,
     lockedHeroCount: entry.draft.lockedHeroIds.length,
     bannedHeroCount: entry.draft.bannedHeroIds.length,
     pickedHeroCount: entry.draft.pickedHeroIds.length

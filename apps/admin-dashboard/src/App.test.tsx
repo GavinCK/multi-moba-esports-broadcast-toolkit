@@ -871,6 +871,127 @@ function createLoLReadyState(): DashboardClientState {
   return state;
 }
 
+const LOL_LINEUP_BLUE_ACTION_IDS = [
+  "pick-blue-1:slot-0",
+  "pick-blue-2-3:slot-0",
+  "pick-blue-2-3:slot-1",
+  "pick-blue-4-5:slot-0",
+  "pick-blue-4-5:slot-1"
+] as const;
+const LOL_LINEUP_RED_ACTION_IDS = [
+  "pick-red-1-2:slot-0",
+  "pick-red-1-2:slot-1",
+  "pick-red-3:slot-0",
+  "pick-red-4:slot-0",
+  "pick-red-5:slot-0"
+] as const;
+
+function createLoLLineupActions(): DashboardDraftSnapshot["draft"]["actions"] {
+  const lineupHeroes = LOL_DASHBOARD_HEROES.slice(0, 10);
+  const blueHeroes = lineupHeroes.slice(0, 5);
+  const redHeroes = lineupHeroes.slice(5, 10);
+  const createPickAction = (
+    actionId: string,
+    side: "BLUE" | "RED",
+    hero: Hero,
+    index: number
+  ): DashboardDraftSnapshot["draft"]["actions"][number] => ({
+    id: actionId,
+    phaseId: actionId.split(":")[0] ?? actionId,
+    type: "PICK",
+    team: side,
+    slotIndex: 0,
+    heroId: hero.id,
+    status: "LOCKED",
+    createdAt: "2026-06-01T00:00:00.000Z",
+    lockedAt: `2026-06-01T00:00:${String(index + 1).padStart(2, "0")}.000Z`
+  });
+
+  return [
+    ...LOL_LINEUP_BLUE_ACTION_IDS.map((actionId, index) =>
+      createPickAction(actionId, "BLUE", blueHeroes[index] as Hero, index)
+    ),
+    ...LOL_LINEUP_RED_ACTION_IDS.map((actionId, index) =>
+      createPickAction(actionId, "RED", redHeroes[index] as Hero, index + 5)
+    )
+  ];
+}
+
+function createLoLLineupReadyState(): DashboardClientState {
+  const state = createLoLReadyState();
+  const snapshot = state.snapshot;
+  const draft = snapshot?.drafts["draft_lol-001"];
+  const lineupActions = createLoLLineupActions();
+
+  if (!snapshot || !draft) {
+    throw new Error("Expected LoL ready test state.");
+  }
+
+  snapshot.drafts["draft_lol-001"] = {
+    ...draft,
+    status: "LIVE",
+    currentPhaseIndex: 17,
+    currentPhase: null,
+    currentActionIds: [],
+    timer: {
+      isRunning: true,
+      phaseStartedAt: "2026-06-01T00:00:10.000Z",
+      remainingSeconds: 60,
+      originalSeconds: 60
+    },
+    actionCounts: {
+      total: lineupActions.length,
+      pending: 0,
+      hover: 0,
+      locked: lineupActions.length,
+      skipped: 0,
+      cancelled: 0
+    },
+    lockedHeroIds: lineupActions.map((action) => action.heroId as string),
+    bannedHeroIds: [],
+    pickedHeroIds: lineupActions.map((action) => action.heroId as string),
+    finalLineup: {
+      status: "ACTIVE",
+      finalLineupBySide: {
+        BLUE: [...LOL_LINEUP_BLUE_ACTION_IDS],
+        RED: [...LOL_LINEUP_RED_ACTION_IDS]
+      },
+      lineupPhaseStartedAt: "2026-06-01T00:00:10.000Z",
+      updatedAt: "2026-06-01T00:00:10.000Z"
+    }
+  };
+
+  return state;
+}
+
+function createLoLLineupConfirmedReadyState(): DashboardClientState {
+  const state = createLoLLineupReadyState();
+  const snapshot = state.snapshot;
+  const draft = snapshot?.drafts["draft_lol-001"];
+
+  if (!snapshot || !draft?.finalLineup) {
+    throw new Error("Expected active LoL lineup test state.");
+  }
+
+  snapshot.drafts["draft_lol-001"] = {
+    ...draft,
+    status: "COMPLETE",
+    timer: {
+      isRunning: false,
+      remainingSeconds: 0,
+      originalSeconds: 60
+    },
+    finalLineup: {
+      ...draft.finalLineup,
+      status: "CONFIRMED",
+      lineupConfirmedAt: "2026-06-01T00:01:10.000Z",
+      updatedAt: "2026-06-01T00:01:10.000Z"
+    }
+  };
+
+  return state;
+}
+
 function createLoLDraftSnapshotFromState(state: DashboardClientState): DashboardDraftSnapshot {
   const summary = state.snapshot?.drafts["draft_lol-001"];
 
@@ -885,24 +1006,27 @@ function createLoLDraftSnapshotFromState(state: DashboardClientState): Dashboard
       gameId: summary.gameId,
       rulesetId: summary.rulesetId,
       gameCode: summary.gameCode,
-      status: "LIVE",
+      status: summary.status as "READY" | "LIVE" | "PAUSED" | "COMPLETE",
       currentPhaseIndex: summary.currentPhaseIndex,
       timer: summary.timer,
-      actions: [
-        {
-          id: "ban-blue-1:slot-0",
-          phaseId: "ban-blue-1",
-          type: "BAN",
-          team: "BLUE",
-          slotIndex: 0,
-          heroId: null,
-          status: "PENDING",
-          createdAt: "2026-06-01T00:00:00.000Z"
-        }
-      ],
-      lockedHeroIds: [],
-      bannedHeroIds: [],
-      pickedHeroIds: [],
+      actions: summary.finalLineup
+        ? createLoLLineupActions()
+        : [
+            {
+              id: "ban-blue-1:slot-0",
+              phaseId: "ban-blue-1",
+              type: "BAN",
+              team: "BLUE",
+              slotIndex: 0,
+              heroId: null,
+              status: "PENDING",
+              createdAt: "2026-06-01T00:00:00.000Z"
+            }
+          ],
+      lockedHeroIds: summary.lockedHeroIds,
+      bannedHeroIds: summary.bannedHeroIds,
+      pickedHeroIds: summary.pickedHeroIds,
+      finalLineup: summary.finalLineup,
       history: [],
       createdAt: "2026-06-01T00:00:00.000Z",
       updatedAt: "2026-06-01T00:00:02.000Z"
@@ -1076,6 +1200,29 @@ function setInputValue(input: HTMLInputElement | undefined, value: string): void
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function setSelectValue(select: HTMLSelectElement | undefined, value: string): void {
+  if (!select) {
+    throw new Error("Expected select to exist.");
+  }
+
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+
+  descriptor?.set?.call(select, value);
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function findNestedButton(root: ParentNode, label: string): HTMLButtonElement {
+  const button = Array.from(root.querySelectorAll("button")).find(
+    (item) => item.textContent?.trim() === label
+  );
+
+  if (!button) {
+    throw new Error(`Nested button not found: ${label}`);
+  }
+
+  return button;
+}
+
 function renderDashboard(
   state: DashboardClientState,
   options: {
@@ -1117,6 +1264,7 @@ afterEach(() => {
   mountedContainer?.remove();
   mountedRoot = null;
   mountedContainer = null;
+  vi.useRealTimers();
 });
 
 describe("DashboardView", () => {
@@ -1155,6 +1303,74 @@ describe("DashboardView", () => {
     expect(text).toContain("Generic MOBA");
     expect(text).toContain("draft_generic-001");
     expect(text).toContain("PRE_SHOW");
+  });
+
+  it("ticks the dashboard draft timer locally without a new draft mutation", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T00:00:05.000Z"));
+
+    const state = createStateWithDraftStatus("LIVE");
+    const draft = state.snapshot?.drafts["draft_generic-001"];
+
+    if (!state.snapshot || !draft) {
+      throw new Error("Expected test draft state.");
+    }
+
+    state.snapshot.drafts["draft_generic-001"] = {
+      ...draft,
+      timer: {
+        isRunning: true,
+        phaseStartedAt: "2026-06-01T00:00:00.000Z",
+        remainingSeconds: 30,
+        originalSeconds: 30
+      }
+    };
+
+    const startingRevision = state.snapshot.revision;
+    const container = renderDashboard(state);
+
+    expect(container.textContent).toContain("25s");
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(container.textContent).toContain("22s");
+    expect(state.snapshot.revision).toBe(startingRevision);
+    expect(state.snapshot.drafts["draft_generic-001"]?.timer.remainingSeconds).toBe(30);
+  });
+
+  it("freezes the dashboard draft timer while paused", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T00:00:05.000Z"));
+
+    const state = createStateWithDraftStatus("PAUSED");
+    const draft = state.snapshot?.drafts["draft_generic-001"];
+
+    if (!state.snapshot || !draft) {
+      throw new Error("Expected test draft state.");
+    }
+
+    state.snapshot.drafts["draft_generic-001"] = {
+      ...draft,
+      timer: {
+        isRunning: false,
+        pausedAt: "2026-06-01T00:00:05.000Z",
+        remainingSeconds: 18,
+        originalSeconds: 30
+      }
+    };
+
+    const container = renderDashboard(state);
+
+    expect(container.textContent).toContain("18s");
+
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(container.textContent).toContain("18s");
+    expect(state.snapshot.drafts["draft_generic-001"]?.timer.remainingSeconds).toBe(18);
   });
 
   it("renders match setup detail and allows client-only selected match changes", () => {
@@ -1461,6 +1677,173 @@ describe("DashboardView", () => {
         operatorId: "draft-operator"
       }
     });
+  });
+
+  it("renders final lineup direct swap controls with localized names, English names, icons, and side-specific endpoints", async () => {
+    const readyState = createLoLLineupReadyState();
+    const { apiClient, postCalls } = createLoLDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "draft",
+      initialSelectedMatchId: "match_lol-showmatch"
+    });
+
+    await flushAsync();
+
+    const firstBlueHero = LOL_DASHBOARD_HEROES[0];
+    const firstBlueLocalizedName = firstBlueHero?.localizedNames?.["zh-TW"];
+
+    if (!firstBlueHero || !firstBlueLocalizedName) {
+      throw new Error("Expected localized LoL lineup hero fixture.");
+    }
+
+    expect(container.textContent).toContain("Final Lineup");
+    expect(container.textContent).toContain("Blue Lineup");
+    expect(container.textContent).toContain("Red Lineup");
+    expect(container.textContent).toContain("Lineup timer");
+    expect(container.textContent).not.toContain("Entity List");
+    expect(container.textContent).not.toContain("Hero search");
+    expect(container.querySelector("[data-hero-id]")).toBeNull();
+    expect(container.textContent).toContain(firstBlueLocalizedName);
+    expect(container.textContent).toContain(firstBlueHero.displayName);
+    expect(container.querySelectorAll("img[data-safe-local-image='candidate']").length).toBeGreaterThanOrEqual(10);
+    expect(container.textContent).toContain("Lineup Slot 1");
+    expect(container.textContent).toContain("Reset Blue");
+    expect(container.textContent).toContain("Reset Red");
+    expect(container.textContent).toContain("Swap with");
+    expect(container.textContent).toContain("Confirm Final Lineup");
+
+    const lineupSides = Array.from(container.querySelectorAll<HTMLElement>(".lineup-side"));
+    const blueLineup = lineupSides.find((lineupSide) => lineupSide.textContent?.includes("Blue Lineup"));
+    const redLineup = lineupSides.find((lineupSide) => lineupSide.textContent?.includes("Red Lineup"));
+    const blueCards = Array.from(blueLineup?.querySelectorAll<HTMLElement>(".lineup-card") ?? []);
+    const redCards = Array.from(redLineup?.querySelectorAll<HTMLElement>(".lineup-card") ?? []);
+    const firstBlueSwapSelect = blueCards[0]?.querySelector<HTMLSelectElement>("select");
+    const secondRedSwapSelect = redCards[1]?.querySelector<HTMLSelectElement>("select");
+    const blueSwapOptionValues = Array.from(firstBlueSwapSelect?.options ?? []).map((option) => option.value);
+    const redSwapOptionValues = Array.from(secondRedSwapSelect?.options ?? []).map((option) => option.value);
+
+    expect(blueCards).toHaveLength(5);
+    expect(redCards).toHaveLength(5);
+    expect(blueSwapOptionValues).toEqual(LOL_LINEUP_BLUE_ACTION_IDS.slice(1));
+    expect(blueSwapOptionValues).not.toContain(LOL_LINEUP_RED_ACTION_IDS[0]);
+    expect(redSwapOptionValues).toEqual([
+      LOL_LINEUP_RED_ACTION_IDS[0],
+      ...LOL_LINEUP_RED_ACTION_IDS.slice(2)
+    ]);
+    expect(redSwapOptionValues).not.toContain(LOL_LINEUP_BLUE_ACTION_IDS[0]);
+
+    act(() => {
+      setSelectValue(firstBlueSwapSelect, LOL_LINEUP_BLUE_ACTION_IDS[2]);
+    });
+    await act(async () => {
+      findNestedButton(blueCards[0] as HTMLElement, "Swap").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(postCalls[0]).toMatchObject({
+      path: "/api/drafts/draft_lol-001/lineup/reorder",
+      body: {
+        side: "BLUE",
+        actionIds: [
+          LOL_LINEUP_BLUE_ACTION_IDS[2],
+          LOL_LINEUP_BLUE_ACTION_IDS[1],
+          LOL_LINEUP_BLUE_ACTION_IDS[0],
+          LOL_LINEUP_BLUE_ACTION_IDS[3],
+          LOL_LINEUP_BLUE_ACTION_IDS[4]
+        ],
+        operatorId: "draft-operator"
+      }
+    });
+
+    act(() => {
+      setSelectValue(secondRedSwapSelect, LOL_LINEUP_RED_ACTION_IDS[4]);
+    });
+    await act(async () => {
+      findNestedButton(redCards[1] as HTMLElement, "Swap").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(postCalls[1]).toMatchObject({
+      path: "/api/drafts/draft_lol-001/lineup/reorder",
+      body: {
+        side: "RED",
+        actionIds: [
+          LOL_LINEUP_RED_ACTION_IDS[0],
+          LOL_LINEUP_RED_ACTION_IDS[4],
+          LOL_LINEUP_RED_ACTION_IDS[2],
+          LOL_LINEUP_RED_ACTION_IDS[3],
+          LOL_LINEUP_RED_ACTION_IDS[1]
+        ],
+        operatorId: "draft-operator"
+      }
+    });
+
+    await act(async () => {
+      findButton(container, "Reset Blue").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(postCalls[2]).toMatchObject({
+      path: "/api/drafts/draft_lol-001/lineup/reset",
+      body: {
+        side: "BLUE",
+        operatorId: "draft-operator"
+      }
+    });
+
+    await act(async () => {
+      findButton(container, "Confirm Final Lineup").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(postCalls[3]).toMatchObject({
+      path: "/api/drafts/draft_lol-001/lineup/confirm",
+      body: {
+        confirm: true,
+        operatorId: "draft-operator"
+      }
+    });
+  });
+
+  it("renders confirmed final lineup as a locked review without timer or swap controls", async () => {
+    const readyState = createLoLLineupConfirmedReadyState();
+    const { apiClient } = createLoLDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "draft",
+      initialSelectedMatchId: "match_lol-showmatch"
+    });
+
+    await flushAsync();
+
+    const firstBlueHero = LOL_DASHBOARD_HEROES[0];
+    const firstBlueLocalizedName = firstBlueHero?.localizedNames?.["zh-TW"];
+
+    if (!firstBlueHero || !firstBlueLocalizedName) {
+      throw new Error("Expected localized LoL lineup hero fixture.");
+    }
+
+    const text = container.textContent ?? "";
+    const lineupCards = Array.from(container.querySelectorAll<HTMLElement>(".lineup-card"));
+
+    expect(text).toContain("Final Lineup");
+    expect(text).toContain("Final lineup is confirmed and locked.");
+    expect(text).toContain("Blue Lineup");
+    expect(text).toContain("Red Lineup");
+    expect(text).toContain("Lineup Slot 1");
+    expect(text).toContain(firstBlueLocalizedName);
+    expect(text).toContain(firstBlueHero.displayName);
+    expect(text).not.toContain("Lineup timer");
+    expect(text).not.toContain("Confirm Final Lineup");
+    expect(text).not.toContain("Reset Blue");
+    expect(text).not.toContain("Reset Red");
+    expect(text).not.toContain("Swap with");
+    expect(text).not.toContain("Move Up");
+    expect(text).not.toContain("Move Down");
+    expect(text).not.toContain("Entity List");
+    expect(text).not.toContain("Hero search");
+    expect(lineupCards).toHaveLength(10);
+    expect(container.querySelectorAll(".lineup-card select")).toHaveLength(0);
+    expect(container.querySelectorAll(".lineup-card button")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-hero-id]")).toHaveLength(0);
+    expect(container.querySelectorAll("img[data-safe-local-image='candidate']").length).toBeGreaterThanOrEqual(10);
   });
 
   it("lets the operator select an entity and hover only after a manual click", async () => {

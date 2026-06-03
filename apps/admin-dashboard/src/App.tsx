@@ -13,6 +13,7 @@ import type {
 } from "./client/types";
 import { CasterPanel } from "./caster/CasterPanel";
 import { DraftOperatorPanel } from "./draft/DraftOperatorPanel";
+import { useDisplayedDraftTimer } from "./draft/useDisplayedDraftTimer";
 import { ProducerPanel } from "./producer/ProducerPanel";
 import type { DashboardClientState, DashboardSocketStatus } from "./state/dashboardState";
 import {
@@ -426,6 +427,7 @@ function AdapterSummary(props: { snapshot: DashboardRuntimeState | null }): Reac
 function DraftCard(props: { draft: DashboardDraftSummary }): ReactNode {
   const draft = props.draft;
   const phaseLabel = draft.currentPhase?.label ?? draft.currentPhase?.id ?? "No active phase";
+  const displayedTimer = useDisplayedDraftTimer(draft.timer);
 
   return (
     <article className="summary-card">
@@ -439,7 +441,7 @@ function DraftCard(props: { draft: DashboardDraftSummary }): ReactNode {
         <Metric label="Match" value={draft.matchId} />
         <Metric label="Game" value={`Game ${draft.gameNumber}`} />
         <Metric label="Phase" value={phaseLabel} />
-        <Metric label="Timer" value={formatDuration(draft.timer.remainingSeconds)} />
+        <Metric label="Timer" value={formatDuration(displayedTimer.remainingSeconds)} />
         <Metric label="Finalized" value={draft.actionCounts.locked} />
         <Metric label="Bans" value={draft.bannedHeroIds.length} />
         <Metric label="Picks" value={draft.pickedHeroIds.length} />

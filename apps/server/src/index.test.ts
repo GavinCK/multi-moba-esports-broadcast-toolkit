@@ -5,7 +5,11 @@ import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
 import { io as createSocketClient, type Socket as ClientSocket } from "socket.io-client";
-import { LOL_GENERATED_CHAMPION_RECORDS } from "@mmbt/game-lol-sample";
+import {
+  LOL_GENERATED_CHAMPION_RECORDS,
+  LOL_SAMPLE_CHAMPIONS,
+  LOL_SAMPLE_STANDARD_RULESET
+} from "@mmbt/game-lol-sample";
 
 import {
   createServerApp,
@@ -23,6 +27,7 @@ const genericMatchId = "match_grand-final";
 const genericFirstActionId = "ban-1-blue:slot-0";
 const genericSecondActionId = "ban-1-red:slot-0";
 const genericHeroId = "generic-vanguard";
+const lolDraftId = "draft_lol-001";
 
 interface LocalServerContext {
   baseUrl: string;
@@ -224,6 +229,52 @@ function readAuditLogLines(packagePath: string): string[] {
     .filter((line) => line.trim().length > 0);
 }
 
+function getLoLActionIds(): string[] {
+  return LOL_SAMPLE_STANDARD_RULESET.phases.flatMap((phase) =>
+    Array.from({ length: phase.count }, (_, slotIndex) => `${phase.id}:slot-${slotIndex}`)
+  );
+}
+
+function getLoLPickActionIdsBySide(side: "BLUE" | "RED"): string[] {
+  return LOL_SAMPLE_STANDARD_RULESET.phases.flatMap((phase) =>
+    phase.type === "PICK" && phase.team === side
+      ? Array.from({ length: phase.count }, (_, slotIndex) => `${phase.id}:slot-${slotIndex}`)
+      : []
+  );
+}
+
+async function runFullLoLDraft(baseUrl: string): Promise<void> {
+  const actionIds = getLoLActionIds();
+  const heroIds = LOL_SAMPLE_CHAMPIONS.slice(0, actionIds.length).map((hero) => hero.id);
+
+  if (heroIds.length < actionIds.length) {
+    throw new Error("Expected enough local LoL heroes to fill the test draft.");
+  }
+
+  const start = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/start`, {
+    method: "POST",
+    body: {
+      operatorId: "draft-op",
+      now: "2026-06-01T09:00:00.000Z"
+    }
+  });
+
+  expect(start.status).toBe(200);
+
+  for (let index = 0; index < actionIds.length; index += 1) {
+    const lock = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/actions/${actionIds[index]}/lock`, {
+      method: "POST",
+      body: {
+        operatorId: "draft-op",
+        heroId: heroIds[index],
+        now: `2026-06-01T09:00:${String(index + 1).padStart(2, "0")}.000Z`
+      }
+    });
+
+    expect(lock.status).toBe(200);
+  }
+}
+
 function expectApiEnvelope(body: unknown, ok: boolean): void {
   expect(body).toEqual(expect.objectContaining({ ok }));
 }
@@ -253,6 +304,27 @@ describe("server runtime foundation", () => {
     expect(snapshot.rulesets.length).toBeGreaterThanOrEqual(4);
     expect(snapshot.themes.map((theme) => theme.id)).toContain("default-theme");
     expect(snapshot.assetStatus.missingAssets).toEqual([]);
+  });
+
+  it("loads the sample LoL ruleset with 30-second normal pick phases", () => {
+    const snapshot = expectLoadedPackage(
+      loadEventPackage({
+        packageRoot: sampleEventPath,
+        repositoryRoot
+      })
+    );
+    const lolRuleset = snapshot.rulesets.find((ruleset) => ruleset.id === "lol-sample-standard-5v5");
+    const pickPhases = lolRuleset?.phases.filter((phase) => phase.type === "PICK") ?? [];
+    const multiPickPhases = pickPhases.filter((phase) => phase.count > 1);
+
+    expect(lolRuleset).toBeDefined();
+    expect(pickPhases).toHaveLength(7);
+    expect(multiPickPhases.map((phase) => phase.id)).toEqual([
+      "pick-red-1-2",
+      "pick-blue-2-3",
+      "pick-blue-4-5"
+    ]);
+    expect(pickPhases.every((phase) => phase.timeSeconds === 30)).toBe(true);
   });
 
   it("returns structured loader errors for missing paths and invalid package data", () => {
@@ -1302,6 +1374,258 @@ describe("server runtime foundation", () => {
                     heroId: null
                   })
                 ])
+              }
+            }
+          }
+        });
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("supports LoL final lineup same-side swaps through reorder, reset, confirm, audit logging, and validation", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-lineup-api-");
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        await runFullLoLDraft(baseUrl);
+
+        const bluePickIds = getLoLPickActionIdsBySide("BLUE");
+        const redPickIds = getLoLPickActionIdsBySide("RED");
+        const stateAfterPicks = await requestJson(baseUrl, "/api/state");
+
+        expect(stateAfterPicks.body).toMatchObject({
+          ok: true,
+          data: {
+            drafts: {
+              [lolDraftId]: expect.objectContaining({
+                finalLineup: expect.objectContaining({
+                  status: "ACTIVE",
+                  finalLineupBySide: {
+                    BLUE: bluePickIds,
+                    RED: redPickIds
+                  }
+                }),
+                timer: expect.objectContaining({
+                  isRunning: true,
+                  remainingSeconds: 60,
+                  originalSeconds: 60
+                })
+              })
+            }
+          }
+        });
+
+        const blueReorder = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/lineup/reorder`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            side: "BLUE",
+            actionIds: [bluePickIds[1], bluePickIds[0], ...bluePickIds.slice(2)],
+            now: "2026-06-01T09:00:30.000Z"
+          }
+        });
+        const redReorder = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/lineup/reorder`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            side: "RED",
+            actionIds: [redPickIds[0], redPickIds[2], redPickIds[1], ...redPickIds.slice(3)],
+            now: "2026-06-01T09:00:31.000Z"
+          }
+        });
+        const crossTeam = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/lineup/reorder`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            side: "BLUE",
+            actionIds: [bluePickIds[0], bluePickIds[1], bluePickIds[2], bluePickIds[3], redPickIds[0]],
+            now: "2026-06-01T09:00:32.000Z"
+          }
+        });
+        const duplicate = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/lineup/reorder`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            side: "RED",
+            actionIds: [redPickIds[0], redPickIds[0], redPickIds[1], redPickIds[2], redPickIds[3]],
+            now: "2026-06-01T09:00:33.000Z"
+          }
+        });
+        const missing = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/lineup/reorder`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            side: "BLUE",
+            actionIds: [bluePickIds[0]],
+            now: "2026-06-01T09:00:34.000Z"
+          }
+        });
+        const resetBlue = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/lineup/reset`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            side: "BLUE",
+            now: "2026-06-01T09:00:35.000Z"
+          }
+        });
+        const confirmWithoutConfirm = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/lineup/confirm`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            now: "2026-06-01T09:00:36.000Z"
+          }
+        });
+        const confirm = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/lineup/confirm`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            confirm: true,
+            now: "2026-06-01T09:00:37.000Z"
+          }
+        });
+        const changeAfterConfirm = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/lineup/reset`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            side: "RED",
+            now: "2026-06-01T09:00:38.000Z"
+          }
+        });
+
+        expect(blueReorder.status).toBe(200);
+        expect(blueReorder.body).toMatchObject({
+          ok: true,
+          data: {
+            draft: {
+              draft: {
+                finalLineup: expect.objectContaining({
+                  finalLineupBySide: expect.objectContaining({
+                    BLUE: [bluePickIds[1], bluePickIds[0], ...bluePickIds.slice(2)]
+                  })
+                }),
+                pickedHeroIds: expect.any(Array),
+                bannedHeroIds: expect.any(Array)
+              }
+            }
+          }
+        });
+        expect(redReorder.status).toBe(200);
+        expect(crossTeam.status).toBe(400);
+        expect(crossTeam.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "DRAFT_INVALID_PAYLOAD"
+          }
+        });
+        expect(duplicate.status).toBe(400);
+        expect(missing.status).toBe(400);
+        expect(resetBlue.status).toBe(200);
+        expect(resetBlue.body).toMatchObject({
+          ok: true,
+          data: {
+            draft: {
+              draft: {
+                finalLineup: expect.objectContaining({
+                  finalLineupBySide: expect.objectContaining({
+                    BLUE: bluePickIds
+                  })
+                })
+              }
+            }
+          }
+        });
+        expect(confirmWithoutConfirm.status).toBe(409);
+        expect(confirm.status).toBe(200);
+        expect(confirm.body).toMatchObject({
+          ok: true,
+          data: {
+            draft: {
+              draft: {
+                finalLineup: expect.objectContaining({
+                  status: "CONFIRMED",
+                  finalLineupBySide: {
+                    BLUE: bluePickIds,
+                    RED: [redPickIds[0], redPickIds[2], redPickIds[1], ...redPickIds.slice(3)]
+                  }
+                }),
+                timer: expect.objectContaining({
+                  isRunning: false
+                })
+              }
+            }
+          }
+        });
+        expect(changeAfterConfirm.status).toBe(409);
+        expect(changeAfterConfirm.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "DRAFT_LINEUP_INVALID"
+          }
+        });
+
+        const eventNames = readAuditLogEntries(tempPackagePath).map(
+          (entry) => (entry as { event: string }).event
+        );
+
+        expect(eventNames).toContain("DRAFT_LINEUP_REORDERED");
+        expect(eventNames).toContain("DRAFT_LINEUP_RESET");
+        expect(eventNames).toContain("DRAFT_LINEUP_CONFIRMED");
+        expect(eventNames.filter((eventName) => eventName.startsWith("DRAFT_LINEUP"))).toEqual([
+          "DRAFT_LINEUP_REORDERED",
+          "DRAFT_LINEUP_REORDERED",
+          "DRAFT_LINEUP_RESET",
+          "DRAFT_LINEUP_CONFIRMED"
+        ]);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("does not mutate picks, bans, or final lineup when the lineup timer reaches zero", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-lineup-timer-");
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        await runFullLoLDraft(baseUrl);
+
+        const before = await requestJson(baseUrl, `/api/drafts/${lolDraftId}`);
+        const pauseAfterTimeout = await requestJson(baseUrl, `/api/drafts/${lolDraftId}/pause`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            now: "2026-06-01T09:02:00.000Z"
+          }
+        });
+
+        expect(before.body).toMatchObject({
+          ok: true,
+          data: {
+            draft: {
+              draft: {
+                finalLineup: expect.objectContaining({
+                  status: "ACTIVE"
+                })
+              }
+            }
+          }
+        });
+        expect(pauseAfterTimeout.status).toBe(200);
+        expect(pauseAfterTimeout.body).toMatchObject({
+          ok: true,
+          data: {
+            draft: {
+              draft: {
+                status: "PAUSED",
+                timer: expect.objectContaining({
+                  isRunning: false,
+                  remainingSeconds: 0
+                }),
+                pickedHeroIds: (before.body as { data: { draft: { draft: { pickedHeroIds: string[] } } } }).data.draft.draft.pickedHeroIds,
+                bannedHeroIds: (before.body as { data: { draft: { draft: { bannedHeroIds: string[] } } } }).data.draft.draft.bannedHeroIds,
+                finalLineup: (before.body as { data: { draft: { draft: { finalLineup: unknown } } } }).data.draft.draft.finalLineup
               }
             }
           }
