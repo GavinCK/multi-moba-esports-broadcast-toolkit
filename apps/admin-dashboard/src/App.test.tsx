@@ -10,10 +10,13 @@ import {
   getProducerMatchIdFromPath
 } from "./App";
 import { DashboardApiError, type DashboardApiClient } from "./client/apiClient";
+import type { Hero } from "@mmbt/shared-types";
+import { LOL_SAMPLE_CHAMPIONS } from "../../../games/lol/src/data";
 import type {
   DashboardAdapterDetail,
   DashboardDraftMutationResponse,
   DashboardDraftSnapshot,
+  DashboardGame,
   DashboardRuntimeState
 } from "./client/types";
 import type { DashboardClientState } from "./state/dashboardState";
@@ -692,6 +695,221 @@ function createAdapterDetail(): DashboardAdapterDetail {
   };
 }
 
+function cloneLoLDashboardHero(hero: Hero): Hero {
+  return {
+    ...hero,
+    localizedNames: hero.localizedNames ? { ...hero.localizedNames } : undefined,
+    roleTags: hero.roleTags ? [...hero.roleTags] : undefined,
+    metadata: hero.metadata ? { ...hero.metadata } : undefined
+  };
+}
+
+const LOL_DASHBOARD_HEROES: Hero[] = LOL_SAMPLE_CHAMPIONS.map((hero) => cloneLoLDashboardHero(hero));
+
+function createLoLAdapterDetail(): DashboardAdapterDetail {
+  return {
+    gameCode: "lol",
+    displayName: "LoL Local Static Roster",
+    loaded: true,
+    heroCount: LOL_DASHBOARD_HEROES.length,
+    rulesetCount: 1,
+    source: "LOCAL_STATIC_SAMPLE",
+    capabilities: {
+      supportsManualDraft: true,
+      supportsClientReader: false,
+      supportsIngameHud: false,
+      supportsPostGameStats: false,
+      supportsAssetSync: false,
+      supportsLocalization: true,
+      supportsCustomRulesets: true
+    },
+    heroes: LOL_DASHBOARD_HEROES,
+    rulesets: [
+      {
+        id: "lol-sample-standard-5v5",
+        gameCode: "lol",
+        name: "LoL Sample Standard 5v5",
+        allowDuplicateHeroes: false,
+        globalBanAcrossSeries: false,
+        globalPickAcrossSeries: false,
+        phases: [
+          {
+            id: "ban-blue-1",
+            type: "BAN",
+            team: "BLUE",
+            count: 1,
+            timeSeconds: 30,
+            label: "Blue Ban 1"
+          }
+        ]
+      }
+    ]
+  };
+}
+
+function createLoLReadyState(): DashboardClientState {
+  const state = createReadyState();
+  const snapshot = state.snapshot;
+
+  if (!snapshot) {
+    throw new Error("Expected ready state snapshot.");
+  }
+
+  const lolGame: DashboardGame = {
+    id: "game_lol-001",
+    matchId: "match_lol-showmatch",
+    gameNumber: 1,
+    gameCode: "lol",
+    blueTeamId: "team_blue",
+    redTeamId: "team_red",
+    draftId: "draft_lol-001",
+    rulesetId: "lol-sample-standard-5v5",
+    themeId: "default-theme",
+    status: "DRAFT_READY" as const
+  };
+  const lolDraft: DashboardRuntimeState["drafts"][string] = {
+    id: "draft_lol-001",
+    matchId: "match_lol-showmatch",
+    gameId: "game_lol-001",
+    gameNumber: 1,
+    gameCode: "lol",
+    rulesetId: "lol-sample-standard-5v5",
+    status: "LIVE",
+    currentPhaseIndex: 0,
+    currentPhase: {
+      id: "ban-blue-1",
+      type: "BAN" as const,
+      team: "BLUE" as const,
+      count: 1,
+      timeSeconds: 30,
+      label: "Blue Ban 1"
+    },
+    currentActionIds: ["ban-blue-1:slot-0"],
+    timer: {
+      isRunning: true,
+      remainingSeconds: 30,
+      originalSeconds: 30
+    },
+    actionCounts: {
+      total: 20,
+      pending: 20,
+      hover: 0,
+      locked: 0,
+      skipped: 0,
+      cancelled: 0
+    },
+    lockedHeroIds: [],
+    bannedHeroIds: [],
+    pickedHeroIds: []
+  };
+
+  snapshot.games = [...snapshot.games, lolGame];
+  snapshot.matches = [
+    ...snapshot.matches,
+    {
+      id: "match_lol-showmatch",
+      eventId: "event_001",
+      gameCode: "lol",
+      title: "LoL Sample Showmatch",
+      format: "BO1",
+      teams: {
+        blue: "team_blue",
+        red: "team_red"
+      },
+      score: {
+        blue: 0,
+        red: 0
+      },
+      currentGameNumber: 1,
+      status: "READY",
+      sponsorSlotIds: ["sponsor_presented-by"],
+      themeId: "default-theme",
+      games: [lolGame]
+    }
+  ];
+  snapshot.rulesets = [
+    ...snapshot.rulesets,
+    {
+      id: "lol-sample-standard-5v5",
+      gameCode: "lol",
+      name: "LoL Sample Standard 5v5"
+    }
+  ];
+  snapshot.drafts = {
+    ...snapshot.drafts,
+    "draft_lol-001": lolDraft
+  };
+  snapshot.adapters = [
+    ...snapshot.adapters,
+    {
+      gameCode: "lol",
+      displayName: "LoL Local Static Roster",
+      loaded: true,
+      heroCount: LOL_DASHBOARD_HEROES.length,
+      rulesetCount: 1,
+      source: "LOCAL_STATIC_SAMPLE",
+      capabilities: {
+        supportsManualDraft: true,
+        supportsClientReader: false,
+        supportsIngameHud: false,
+        supportsPostGameStats: false,
+        supportsAssetSync: false
+      }
+    }
+  ];
+  snapshot.adapterStatus = {
+    ...snapshot.adapterStatus,
+    lol: {
+      loaded: true,
+      displayName: "LoL Local Static Roster",
+      heroCount: LOL_DASHBOARD_HEROES.length,
+      rulesetCount: 1
+    }
+  };
+  snapshot.availableAdapterIds = [...snapshot.availableAdapterIds, "lol"];
+
+  return state;
+}
+
+function createLoLDraftSnapshotFromState(state: DashboardClientState): DashboardDraftSnapshot {
+  const summary = state.snapshot?.drafts["draft_lol-001"];
+
+  if (!summary) {
+    throw new Error("Missing LoL test draft summary.");
+  }
+
+  return {
+    summary,
+    draft: {
+      id: summary.id,
+      gameId: summary.gameId,
+      rulesetId: summary.rulesetId,
+      gameCode: summary.gameCode,
+      status: "LIVE",
+      currentPhaseIndex: summary.currentPhaseIndex,
+      timer: summary.timer,
+      actions: [
+        {
+          id: "ban-blue-1:slot-0",
+          phaseId: "ban-blue-1",
+          type: "BAN",
+          team: "BLUE",
+          slotIndex: 0,
+          heroId: null,
+          status: "PENDING",
+          createdAt: "2026-06-01T00:00:00.000Z"
+        }
+      ],
+      lockedHeroIds: [],
+      bannedHeroIds: [],
+      pickedHeroIds: [],
+      history: [],
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:02.000Z"
+    }
+  };
+}
+
 function createDraftApiClient(
   state: DashboardClientState,
   options: {
@@ -753,6 +971,58 @@ function createDraftApiClient(
   return { apiClient, postCalls };
 }
 
+function createLoLDraftApiClient(state: DashboardClientState): {
+  apiClient: DashboardApiClient;
+  postCalls: Array<{ path: string; body: Record<string, unknown> }>;
+} {
+  const postCalls: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const draftSnapshot = createLoLDraftSnapshotFromState(state);
+  const mutationResponse: DashboardDraftMutationResponse = {
+    revision: (state.snapshot?.revision ?? 0) + 1,
+    draft: draftSnapshot
+  };
+  const apiClient: DashboardApiClient = {
+    async get<TData>(path: string): Promise<TData> {
+      if (path === "/api/drafts/draft_lol-001") {
+        return {
+          revision: state.snapshot?.revision ?? 0,
+          draft: draftSnapshot
+        } as TData;
+      }
+
+      if (path === "/api/adapters/lol") {
+        return createLoLAdapterDetail() as TData;
+      }
+
+      if (path === "/api/health") {
+        return state.health as TData;
+      }
+
+      if (path === "/api/state") {
+        return state.snapshot as TData;
+      }
+
+      throw new DashboardApiError({
+        code: "TEST_NOT_FOUND",
+        message: `Unhandled LoL test GET ${path}`
+      });
+    },
+    async post<TData>(path: string, body: Record<string, unknown>): Promise<TData> {
+      postCalls.push({ path, body });
+
+      return mutationResponse as TData;
+    },
+    async getHealth() {
+      return state.health ?? createSnapshot().health;
+    },
+    async getState() {
+      return state.snapshot ?? createSnapshot();
+    }
+  };
+
+  return { apiClient, postCalls };
+}
+
 async function flushAsync(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
@@ -780,6 +1050,16 @@ function findDialogButton(container: HTMLDivElement, label: string): HTMLButtonE
 
   if (!button) {
     throw new Error(`Dialog button not found: ${label}`);
+  }
+
+  return button;
+}
+
+function findHeroButton(container: HTMLDivElement, heroId: string): HTMLButtonElement {
+  const button = container.querySelector<HTMLButtonElement>(`button[data-hero-id="${heroId}"]`);
+
+  if (!button) {
+    throw new Error(`Hero button not found: ${heroId}`);
   }
 
   return button;
@@ -1079,6 +1359,110 @@ describe("DashboardView", () => {
     expect(text).toContain("Pick Slots");
   });
 
+  it("wires the LoL adapter roster, normalized search, icons, and full-name fallback into the draft operator", async () => {
+    const readyState = createLoLReadyState();
+    const { apiClient, postCalls } = createLoLDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "draft",
+      initialSelectedMatchId: "match_lol-showmatch"
+    });
+
+    await flushAsync();
+
+    const kaiSaLocalizedName = LOL_DASHBOARD_HEROES.find((hero) => hero.id === "lol-kaisa")
+      ?.localizedNames?.["zh-TW"];
+    if (!kaiSaLocalizedName) {
+      throw new Error("Expected generated Kai'Sa zh-TW localized name in dashboard test data.");
+    }
+    expect(container.textContent).toContain("LoL Sample Showmatch");
+    expect(container.textContent).toContain(
+      `Showing ${LOL_DASHBOARD_HEROES.length} of ${LOL_DASHBOARD_HEROES.length} local entities from LoL Local Static Roster.`
+    );
+    expect(LOL_DASHBOARD_HEROES.length).toBeGreaterThan(160);
+    expect(LOL_DASHBOARD_HEROES.length).not.toBe(20);
+    expect(container.querySelectorAll("[data-hero-id]").length).toBeGreaterThan(20);
+    expect(container.textContent).toContain("Kai'Sa");
+    expect(container.textContent).toContain("Renata Glasc");
+    expect(container.textContent).toContain(kaiSaLocalizedName);
+
+    const searchInput = container.querySelector<HTMLInputElement>('input[placeholder="Search heroes, aliases, roles, or local IDs"]');
+    const searchCases = [
+      ["kaisa", "lol-kaisa", "Kai'Sa"],
+      ["Kha Zix", "lol-khazix", "Kha'Zix"],
+      ["ChoGath", "lol-chogath", "Cho'Gath"],
+      ["Dr Mundo", "lol-dr-mundo", "Dr. Mundo"],
+      ["Mundo", "lol-dr-mundo", "Dr. Mundo"],
+      ["Nunu and Willump", "lol-nunu-and-willump", "Nunu & Willump"],
+      ["MF", "lol-miss-fortune", "Miss Fortune"],
+      ["missfortune", "lol-miss-fortune", "Miss Fortune"],
+      ["TF", "lol-twisted-fate", "Twisted Fate"],
+      ["twistedfate", "lol-twisted-fate", "Twisted Fate"],
+      ["Jarvan 4", "lol-jarvan-iv", "Jarvan IV"],
+      ["aurelionsol", "lol-aurelion-sol", "Aurelion Sol"],
+      ["monkey king", "lol-wukong", "Wukong"],
+      ["renata", "lol-renata-glasc", "Renata Glasc"]
+    ] as const;
+
+    for (const [query, heroId, displayName] of searchCases) {
+      act(() => {
+        setInputValue(searchInput ?? undefined, query);
+      });
+      await flushAsync();
+
+      const heroButton = findHeroButton(container, heroId);
+
+      expect(heroButton.textContent).toContain(displayName);
+      expect(heroButton.textContent).not.toContain("Fixture Champion");
+    }
+
+    act(() => {
+      setInputValue(searchInput ?? undefined, kaiSaLocalizedName);
+    });
+    await flushAsync();
+
+    const localizedKaiSaButton = findHeroButton(container, "lol-kaisa");
+
+    expect(localizedKaiSaButton.querySelector("strong")?.textContent).toBe(kaiSaLocalizedName);
+    expect(localizedKaiSaButton.textContent).toContain("Kai'Sa");
+
+    act(() => {
+      setInputValue(searchInput ?? undefined, "kaisa");
+    });
+    await flushAsync();
+
+    const kaiSaButton = findHeroButton(container, "lol-kaisa");
+    const artContainer = kaiSaButton.querySelector(".hero-button__art");
+    const safeImage = kaiSaButton.querySelector("img[data-safe-local-image='candidate']");
+
+    expect(artContainer?.getAttribute("data-icon-path")).toBe("/assets/hero-icons/lol/Kaisa.png");
+    expect(safeImage?.getAttribute("src")).toBe("/assets/hero-icons/lol/Kaisa.png");
+
+    await act(async () => {
+      safeImage?.dispatchEvent(new Event("error"));
+    });
+
+    expect(kaiSaButton.querySelector("img[data-safe-local-image='candidate']")).toBeNull();
+    expect(kaiSaButton.textContent).toContain("Kai'Sa");
+
+    act(() => {
+      kaiSaButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsync();
+    await act(async () => {
+      findButton(container, "Hover Selected").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(postCalls).toHaveLength(1);
+    expect(postCalls[0]).toMatchObject({
+      path: "/api/drafts/draft_lol-001/actions/ban-blue-1:slot-0/hover",
+      body: {
+        heroId: "lol-kaisa",
+        operatorId: "draft-operator"
+      }
+    });
+  });
+
   it("lets the operator select an entity and hover only after a manual click", async () => {
     const readyState = createStateWithDraftStatus("LIVE");
     const { apiClient, postCalls } = createDraftApiClient(readyState);
@@ -1091,7 +1475,7 @@ describe("DashboardView", () => {
     expect(postCalls).toHaveLength(0);
 
     act(() => {
-      findButton(container, "Alpha SentinelFrontline").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      findHeroButton(container, "hero_alpha").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await act(async () => {
       findButton(container, "Hover Selected").dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1118,7 +1502,7 @@ describe("DashboardView", () => {
     await flushAsync();
 
     act(() => {
-      findButton(container, "Alpha SentinelFrontline").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      findHeroButton(container, "hero_alpha").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     act(() => {
       findButton(container, "Lock Selected").dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1258,7 +1642,7 @@ describe("DashboardView", () => {
 
     await flushAsync();
     act(() => {
-      findButton(container, "Alpha SentinelFrontline").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      findHeroButton(container, "hero_alpha").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await act(async () => {
       findButton(container, "Hover Selected").dispatchEvent(new MouseEvent("click", { bubbles: true }));

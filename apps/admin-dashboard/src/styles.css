@@ -482,14 +482,15 @@ th {
 }
 
 .hero-button {
-  min-height: 76px;
+  min-height: 94px;
   border: 1px solid #c9d3df;
   border-radius: 8px;
   background: #ffffff;
   color: #111827;
   cursor: pointer;
   display: grid;
-  gap: 3px;
+  gap: 8px;
+  grid-template-columns: 44px minmax(0, 1fr);
   padding: 10px;
   text-align: left;
 }
@@ -503,14 +504,67 @@ th {
   border-color: #155e75;
 }
 
+.hero-button__art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border: 1px solid #c9d3df;
+  border-radius: 8px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.hero-button__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hero-button__fallback {
+  line-height: 1;
+}
+
+.hero-button__copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.hero-button strong {
+  overflow-wrap: anywhere;
+}
+
+.hero-button__secondary {
+  color: #334155 !important;
+  font-weight: 700;
+}
+
 .hero-button span {
   color: #64748b;
   font-size: 12px;
 }
 
+.hero-button__copy span {
+  overflow-wrap: anywhere;
+}
+
 .hero-button__locked {
+  grid-column: 1 / -1;
   color: #991b1b !important;
   font-weight: 800;
+}
+
+.entity-list-count {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .draft-slot-grid {

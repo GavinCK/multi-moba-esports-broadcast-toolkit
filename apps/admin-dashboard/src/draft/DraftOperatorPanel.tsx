@@ -12,6 +12,7 @@ import type {
   DashboardMatch,
   DashboardRuntimeState
 } from "../client/types";
+import { SafeLocalImage } from "../components/SafeLocalImage";
 import type { DashboardClientState } from "../state/dashboardState";
 import {
   findTeam,
@@ -24,6 +25,7 @@ import {
   getRulesetLabel,
   getSelectedMatch
 } from "../state/selectors";
+import { heroMatchesSearch } from "./heroSearch";
 
 type AsyncStatus = "idle" | "loading" | "ready" | "error";
 
@@ -41,6 +43,8 @@ interface PendingConfirmation {
   confirmationText?: string;
   run(reason: string): Promise<void>;
 }
+
+const DRAFT_OPERATOR_PREFERRED_LOCALE = "zh-TW";
 
 export interface DraftOperatorPanelProps {
   state: DashboardClientState;
@@ -105,7 +109,98 @@ function getHeroName(heroById: Map<string, Hero>, heroId: string | null | undefi
     return "Empty";
   }
 
-  return heroById.get(heroId)?.displayName ?? heroId;
+  const hero = heroById.get(heroId);
+
+  return hero ? formatHeroDisplayLabel(hero) : heroId;
+}
+
+function isSafeLocalAssetPath(value: string | undefined): value is string {
+  if (!value) {
+    return false;
+  }
+
+  const trimmed = value.trim();
+
+  return (
+    trimmed.length > 0 &&
+    !/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) &&
+    !trimmed.startsWith("//") &&
+    !trimmed.includes("\\") &&
+    !trimmed.includes("..")
+  );
+}
+
+function toBrowserLocalAssetPath(value: string | undefined): string | null {
+  if (!isSafeLocalAssetPath(value)) {
+    return null;
+  }
+
+  return value.startsWith("/") ? value : `/${value}`;
+}
+
+function getHeroMetadataString(hero: Hero, key: string): string | null {
+  const value = hero.metadata?.[key];
+
+  return typeof value === "string" ? value : null;
+}
+
+function getHeroPrimaryName(hero: Hero): string {
+  const localizedName = hero.localizedNames?.[DRAFT_OPERATOR_PREFERRED_LOCALE]?.trim();
+
+  return localizedName && localizedName.length > 0 ? localizedName : hero.displayName;
+}
+
+function getHeroSecondaryName(hero: Hero): string | null {
+  const primaryName = getHeroPrimaryName(hero);
+
+  return primaryName === hero.displayName ? null : hero.displayName;
+}
+
+function formatHeroDisplayLabel(hero: Hero): string {
+  const secondaryName = getHeroSecondaryName(hero);
+
+  return secondaryName ? `${getHeroPrimaryName(hero)} / ${secondaryName}` : hero.displayName;
+}
+
+function getHeroFallbackLabel(hero: Hero): string {
+  const metadataFallback = getHeroMetadataString(hero, "fallbackLabel");
+
+  if (metadataFallback && metadataFallback.trim().length > 0) {
+    return metadataFallback.trim().slice(0, 4).toLocaleUpperCase();
+  }
+
+  const initials = hero.displayName
+    .replace(/['.`]/g, "")
+    .replace(/&/g, " ")
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0))
+    .join("")
+    .slice(0, 3)
+    .toLocaleUpperCase();
+
+  return initials || hero.displayName.slice(0, 2).toLocaleUpperCase();
+}
+
+function resolveHeroIcon(hero: Hero): string | null {
+  return toBrowserLocalAssetPath(hero.squareUrl ?? hero.iconUrl);
+}
+
+function HeroArtwork(props: { hero: Hero }): ReactNode {
+  const icon = resolveHeroIcon(props.hero);
+
+  return (
+    <span className="hero-button__art" data-icon-path={icon ?? "fallback"}>
+      <span aria-hidden="true" className="hero-button__fallback">
+        {getHeroFallbackLabel(props.hero)}
+      </span>
+      <SafeLocalImage
+        src={icon}
+        alt={`${formatHeroDisplayLabel(props.hero)} icon`}
+        className="hero-button__image"
+      />
+    </span>
+  );
 }
 
 function getStatusTone(status: string | undefined): "good" | "warn" | "danger" | "neutral" {
@@ -555,21 +650,8 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
     ?.allowDuplicateHeroes ?? false;
   const filteredHeroes = useMemo(() => {
     const heroes = adapterDetail?.heroes ?? [];
-    const query = searchQuery.trim().toLowerCase();
 
-    if (!query) {
-      return heroes;
-    }
-
-    return heroes.filter((hero) => {
-      const roleText = hero.roleTags?.join(" ").toLowerCase() ?? "";
-
-      return (
-        hero.displayName.toLowerCase().includes(query) ||
-        hero.id.toLowerCase().includes(query) ||
-        roleText.includes(query)
-      );
-    });
+    return heroes.filter((hero) => heroMatchesSearch(hero, searchQuery));
   }, [adapterDetail?.heroes, searchQuery]);
   const actionHistory = draft?.history.slice(-8).reverse() ?? [];
   const phaseLabel =
@@ -703,7 +785,7 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
 
     openConfirmation({
       title: "Lock Hero",
-      message: `Lock ${selectedHero.displayName} into ${formatActionLabel(activeAction)}. This changes final pick/ban state.`,
+      message: `Lock ${formatHeroDisplayLabel(selectedHero)} into ${formatActionLabel(activeAction)}. This changes final pick/ban state.`,
       confirmLabel: "Lock Hero",
       reasonRequired: false,
       run: async () =>
@@ -990,7 +1072,7 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
           </label>
           <Metric label="Side" value={formatSide(activeAction?.team)} />
           <Metric label="Type" value={formatActionType(activeAction?.type)} />
-          <Metric label="Selected entity" value={selectedHero?.displayName ?? "None"} />
+          <Metric label="Selected entity" value={selectedHero ? formatHeroDisplayLabel(selectedHero) : "None"} />
         </div>
 
         <div className="operator-controls">
@@ -1022,9 +1104,13 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
           <input
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.currentTarget.value)}
-            placeholder="Search heroes"
+            placeholder="Search heroes, aliases, roles, or local IDs"
           />
         </label>
+        <p className="entity-list-count">
+          Showing {filteredHeroes.length} of {adapterDetail?.heroes.length ?? 0} local entities
+          {adapterDetail ? ` from ${adapterDetail.displayName}` : ""}.
+        </p>
         {adapterLoadStatus === "loading" ? <p className="empty-state">Loading local adapter entities.</p> : null}
         {filteredHeroes.length === 0 ? (
           <p className="empty-state">No selectable entities match the current search.</p>
@@ -1039,10 +1125,18 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
                   aria-pressed={selectedHeroId === hero.id}
                   key={hero.id}
                   type="button"
+                  aria-label={formatHeroDisplayLabel(hero)}
+                  data-hero-id={hero.id}
                   onClick={() => setSelectedHeroId(hero.id)}
                 >
-                  <strong>{hero.displayName}</strong>
-                  <span>{hero.roleTags?.join(", ") ?? "No role tags"}</span>
+                  <HeroArtwork hero={hero} />
+                  <span className="hero-button__copy">
+                    <strong>{getHeroPrimaryName(hero)}</strong>
+                    {getHeroSecondaryName(hero) ? (
+                      <span className="hero-button__secondary">{getHeroSecondaryName(hero)}</span>
+                    ) : null}
+                    <span className="hero-button__roles">{hero.roleTags?.join(", ") ?? "No role tags"}</span>
+                  </span>
                   {locked ? <span className="hero-button__locked">Locked</span> : null}
                 </button>
               );
