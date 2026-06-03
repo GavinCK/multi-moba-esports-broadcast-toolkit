@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createDraftState } from "@mmbt/core-draft";
 import { createGameAdapterRegistry, getGameAdapter, validateGameAdapter } from "@mmbt/game-adapters";
@@ -9,6 +12,8 @@ import {
   LOL_SAMPLE_CHAMPIONS,
   LOL_SAMPLE_DATA_SOURCE,
   LOL_SAMPLE_GAME_CODE,
+  LOL_GENERATED_CHAMPION_RECORDS,
+  LOL_GENERATED_CHAMPION_SOURCE,
   LOL_SAMPLE_STANDARD_RULESET,
   LOL_SAMPLE_STANDARD_RULESET_ID,
   lolSampleAdapter,
@@ -18,6 +23,22 @@ import {
   validateLoLSampleChampions,
   validateLoLSampleRulesetCompatibility
 } from "./index";
+
+const sourceDirectory = dirname(fileURLToPath(import.meta.url));
+
+const DIFFICULT_LOL_CHAMPION_NAMES = [
+  "Kai'Sa",
+  "Kha'Zix",
+  "Cho'Gath",
+  "Dr. Mundo",
+  "Nunu & Willump",
+  "Miss Fortune",
+  "Twisted Fate",
+  "Jarvan IV",
+  "Aurelion Sol",
+  "Wukong",
+  "Renata Glasc"
+] as const;
 
 function createDraftStateStub(overrides: Partial<DraftState> = {}): DraftState {
   return {
@@ -73,11 +94,16 @@ describe("LoL static manual sample adapter", () => {
     expect(validateGameAdapter(lolSampleAdapter).valid).toBe(true);
     expect(validateLoLSampleAdapterMetadata().valid).toBe(true);
     expect(lolSampleAdapter.gameCode).toBe(LOL_SAMPLE_GAME_CODE);
-    expect(lolSampleAdapter.displayName).toContain("Static Manual Sample");
+    expect(lolSampleAdapter.displayName).toBe("LoL Local Static Roster");
     expect(LOL_SAMPLE_ADAPTER_METADATA).toMatchObject({
-      mode: "static-manual-sample",
-      dataSource: LOL_SAMPLE_DATA_SOURCE
+      mode: "static-manual-roster",
+      dataSource: LOL_SAMPLE_DATA_SOURCE,
+      dataDragonVersion: LOL_GENERATED_CHAMPION_SOURCE.dataDragonVersion,
+      approvedArtworkIncluded: false
     });
+    expect(LOL_GENERATED_CHAMPION_SOURCE.localizedNameCoverage["zh-TW"]).toBe(
+      LOL_GENERATED_CHAMPION_RECORDS.length
+    );
     expect(lolSampleAdapter.capabilities).toMatchObject({
       supportsManualDraft: true,
       supportsClientReader: false,
@@ -85,11 +111,13 @@ describe("LoL static manual sample adapter", () => {
       supportsPostGameStats: false,
       supportsAssetSync: false
     });
-    expect(heroes).toHaveLength(20);
+    expect(heroes.length).toBeGreaterThan(160);
+    expect(heroes).toHaveLength(LOL_GENERATED_CHAMPION_RECORDS.length);
+    expect(heroes).not.toHaveLength(20);
     expect(rulesets.map((ruleset) => ruleset.id)).toEqual([LOL_SAMPLE_STANDARD_RULESET_ID]);
   });
 
-  it("validates the local static selectable entity pool", () => {
+  it("validates the local static champion roster", () => {
     const validChampion = lolSampleAdapter.getHeroById("lol-ahri");
     const invalidChampion = {
       id: "",
@@ -106,6 +134,82 @@ describe("LoL static manual sample adapter", () => {
     );
   });
 
+  it("includes known LoL champions from the generated static roster", async () => {
+    const heroes = await lolSampleAdapter.loadHeroes();
+    const byName = new Map(heroes.map((champion) => [champion.displayName, champion]));
+
+    [
+      ["Aatrox", "lol-aatrox"],
+      ["Ahri", "lol-ahri"],
+      ["Akali", "lol-akali"],
+      ["Annie", "lol-annie"],
+      ["Lee Sin", "lol-lee-sin"],
+      ["Lux", "lol-lux"],
+      ["Yasuo", "lol-yasuo"],
+      ["Zed", "lol-zed"],
+      ["Jinx", "lol-jinx"],
+      ["Thresh", "lol-thresh"]
+    ].forEach(([displayName, id]) => {
+      expect(byName.get(displayName)?.id).toBe(id);
+    });
+    DIFFICULT_LOL_CHAMPION_NAMES.forEach((displayName) => {
+      expect(byName.has(displayName)).toBe(true);
+    });
+  });
+
+  it("includes zh-TW localized names from generated static Data Dragon metadata", async () => {
+    const heroes = await lolSampleAdapter.loadHeroes();
+    const localizedHeroes = heroes.filter((champion) => {
+      const localizedName = champion.localizedNames?.["zh-TW"];
+
+      return typeof localizedName === "string" && localizedName.trim().length > 0;
+    });
+    const representative = heroes.find((champion) => champion.displayName === "Ahri") ?? heroes[0];
+    const representativeLocalizedName = representative?.localizedNames?.["zh-TW"];
+
+    expect(localizedHeroes).toHaveLength(heroes.length);
+    expect(representativeLocalizedName).toEqual(expect.any(String));
+    expect(representativeLocalizedName?.trim().length).toBeGreaterThan(0);
+    expect(lolSampleAdapter.searchHeroes(representativeLocalizedName ?? "").map((champion) => champion.id)).toContain(
+      representative?.id
+    );
+  });
+
+  it("does not expose generic MOBA placeholder heroes in the LoL roster", async () => {
+    const heroes = await lolSampleAdapter.loadHeroes();
+    const heroNames = new Set(heroes.map((champion) => champion.displayName));
+    const heroIds = new Set(heroes.map((champion) => champion.id));
+
+    [
+      ["generic-vanguard", "Vanguard"],
+      ["generic-warden", "Warden"],
+      ["generic-oracle", "Oracle"],
+      ["generic-ranger", "Ranger"],
+      ["generic-shade", "Shade"],
+      ["generic-tempest", "Tempest"],
+      ["generic-sentinel", "Sentinel"],
+      ["generic-bastion", "Bastion"],
+      ["generic-ember", "Ember"],
+      ["generic-striker", "Striker"]
+    ].forEach(([id, displayName]) => {
+      expect(heroIds.has(id)).toBe(false);
+      expect(heroNames.has(displayName)).toBe(false);
+    });
+  });
+
+  it("keeps champion ids, display names, and fallback metadata stable and non-empty", async () => {
+    const heroes = await lolSampleAdapter.loadHeroes();
+
+    heroes.forEach((champion) => {
+      expect(champion.id).toMatch(/^lol-[a-z0-9]+(?:-[a-z0-9]+)*$/);
+      expect(champion.displayName.trim().length).toBeGreaterThan(0);
+      expect(champion.metadata?.entityType).toBe("champion");
+      expect(champion.metadata?.dataDragonId).toEqual(expect.any(String));
+      expect(champion.metadata?.fallbackLabel).toEqual(expect.any(String));
+      expect(champion.metadata?.imageState).toBe("local-artwork-not-packaged");
+    });
+  });
+
   it("registers and resolves through the shared adapter registry", () => {
     const registryResult = createGameAdapterRegistry([lolSampleAdapter]);
 
@@ -120,10 +224,10 @@ describe("LoL static manual sample adapter", () => {
 
   it("returns local placeholder asset references and fallbacks only", () => {
     expect(lolSampleAdapter.getAssetUrl("HERO_ICON", "lol-ahri")).toBe(
-      "assets/lol-sample/champion-icons/lol-ahri.svg"
+      "assets/hero-icons/lol/Ahri.png"
     );
     expect(lolSampleAdapter.getAssetUrl("HERO_ICON", "unknown")).toBe(
-      "assets/lol-sample/fallbacks/champion-icon.svg"
+      "assets/fallbacks/hero-icon.svg"
     );
     expect(lolSampleAdapter.getAssetUrl("ITEM_ICON", "lol-ahri")).toBeNull();
 
@@ -162,7 +266,13 @@ describe("LoL static manual sample adapter", () => {
       ...LOL_SAMPLE_STANDARD_RULESET,
       phases: [
         ...LOL_SAMPLE_STANDARD_RULESET.phases,
-        { id: "extra-pick", type: "PICK", team: "BLUE", count: 1, timeSeconds: 30 }
+        {
+          id: "extra-pick",
+          type: "PICK",
+          team: "BLUE",
+          count: LOL_SAMPLE_CHAMPIONS.length,
+          timeSeconds: 30
+        }
       ]
     };
 
@@ -208,15 +318,34 @@ describe("LoL static manual sample adapter", () => {
     expect(normalized.metadata).not.toBe(champion.metadata);
   });
 
-  it("searches sample selectable entities by name, id, and role tag", () => {
+  it("searches sample selectable entities by name, id, role tag, punctuation, and aliases", () => {
     expect(lolSampleAdapter.getHeroById("lol-ahri")?.displayName).toBe("Ahri");
     expect(lolSampleAdapter.getHeroById("unknown")).toBeNull();
     expect(lolSampleAdapter.searchHeroes("marksman").map((champion) => champion.id)).toEqual(
       expect.arrayContaining(["lol-ashe", "lol-caitlyn", "lol-ezreal"])
     );
-    expect(lolSampleAdapter.searchHeroes("orianna").map((champion) => champion.id)).toEqual([
-      "lol-orianna"
-    ]);
+    expect(lolSampleAdapter.searchHeroes("orianna").map((champion) => champion.id)).toEqual(["lol-orianna"]);
+    expect(lolSampleAdapter.searchHeroes("LeeSin").map((champion) => champion.id)).toEqual(["lol-lee-sin"]);
+    expect(lolSampleAdapter.searchHeroes("monkey king").map((champion) => champion.id)).toEqual(["lol-wukong"]);
+
+    [
+      ["Kai'Sa", "lol-kaisa"],
+      ["kaisa", "lol-kaisa"],
+      ["Kha Zix", "lol-khazix"],
+      ["ChoGath", "lol-chogath"],
+      ["Dr Mundo", "lol-dr-mundo"],
+      ["Mundo", "lol-dr-mundo"],
+      ["Nunu and Willump", "lol-nunu-and-willump"],
+      ["MF", "lol-miss-fortune"],
+      ["missfortune", "lol-miss-fortune"],
+      ["TF", "lol-twisted-fate"],
+      ["twistedfate", "lol-twisted-fate"],
+      ["Jarvan 4", "lol-jarvan-iv"],
+      ["aurelionsol", "lol-aurelion-sol"],
+      ["Renata Glasc", "lol-renata-glasc"]
+    ].forEach(([query, expectedId]) => {
+      expect(lolSampleAdapter.searchHeroes(query).map((champion) => champion.id)).toContain(expectedId);
+    });
   });
 
   it("validates draft actions against the static sample champion pool", () => {
@@ -250,7 +379,7 @@ describe("LoL static manual sample adapter", () => {
     expect(lolSampleAdapter.capabilities.supportsAssetSync).toBe(false);
   });
 
-  it("does not embed external service or client-reader runtime hooks in sample data", () => {
+  it("does not embed external service or client-reader runtime hooks in runtime data", () => {
     const remoteScheme = ["http", "://"].join("");
     const forbiddenRuntimeTokens = [
       ["L", "CU"].join(""),
@@ -269,6 +398,26 @@ describe("LoL static manual sample adapter", () => {
     expect(samplePayload).not.toContain(remoteScheme);
     forbiddenRuntimeTokens.forEach((token) => {
       expect(samplePayload).not.toContain(token);
+    });
+  });
+
+  it("keeps runtime source free of remote fetches and remote asset URLs", () => {
+    const runtimeSource = [
+      "adapter.ts",
+      "data.ts",
+      "generated-champions.ts",
+      "validation.ts"
+    ].map((fileName) => readFileSync(join(sourceDirectory, fileName), "utf8")).join("\n");
+
+    [
+      "fetch(",
+      "Invoke-RestMethod",
+      "axios",
+      "riotgames.com/cdn",
+      "ddragon.leagueoflegends.com",
+      "cdn.communitydragon.org"
+    ].forEach((token) => {
+      expect(runtimeSource).not.toContain(token);
     });
   });
 });

@@ -154,14 +154,14 @@ export function validateLoLSampleAdapterMetadata(
     });
   }
 
-  if (metadata.mode !== "static-manual-sample") {
-    addIssue(issues, "lol-sample-metadata-mode-invalid", "metadata.mode must be static-manual-sample.", {
+  if (metadata.mode !== "static-manual-roster") {
+    addIssue(issues, "lol-sample-metadata-mode-invalid", "metadata.mode must be static-manual-roster.", {
       path: "metadata.mode"
     });
   }
 
   if (metadata.dataSource !== LOL_SAMPLE_DATA_SOURCE) {
-    addIssue(issues, "lol-sample-metadata-source-invalid", "metadata.dataSource must identify local static sample data.", {
+    addIssue(issues, "lol-sample-metadata-source-invalid", "metadata.dataSource must identify local generated static roster data.", {
       path: "metadata.dataSource"
     });
   }

@@ -5,13 +5,15 @@
   "description": "Static manual LoL sample adapter for local draft testing.",
   "type": "module",
   "main": "dist/index.js",
+  "module": "src/index.ts",
   "types": "dist/index.d.ts",
   "scripts": {
     "dev": "echo LoL sample adapter contains pure local data and helpers.",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "eslint src --max-warnings=0"
+    "lint": "eslint src --max-warnings=0",
+    "champions:import": "node scripts/import-data-dragon-champions.mjs"
   },
   "dependencies": {
     "@mmbt/core-draft": "workspace:*",

@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
 import { io as createSocketClient, type Socket as ClientSocket } from "socket.io-client";
+import { LOL_GENERATED_CHAMPION_RECORDS } from "@mmbt/game-lol-sample";
 
 import {
   createServerApp,
@@ -499,6 +500,7 @@ describe("server runtime foundation", () => {
   it("returns safe public adapter metadata and local adapter details", async () => {
     const listResponse = await fetchJson("/api/adapters");
     const genericResponse = await fetchJson("/api/adapters/generic-moba");
+    const lolResponse = await fetchJson("/api/adapters/lol");
     const missingResponse = await fetchJson("/api/adapters/unknown-moba");
 
     expect(listResponse.status).toBe(200);
@@ -552,6 +554,84 @@ describe("server runtime foundation", () => {
         ])
       }
     });
+
+    expect(lolResponse.status).toBe(200);
+    expectApiEnvelope(lolResponse.body, true);
+    expect(lolResponse.body).toMatchObject({
+      ok: true,
+      data: {
+        gameCode: "lol",
+        displayName: "LoL Local Static Roster",
+        loaded: true,
+        heroes: expect.arrayContaining([
+          expect.objectContaining({
+            id: "lol-kaisa",
+            displayName: "Kai'Sa",
+            iconUrl: "assets/hero-icons/lol/Kaisa.png",
+            localizedNames: {
+              "zh-TW": expect.any(String)
+            }
+          }),
+          expect.objectContaining({
+            id: "lol-wukong",
+            displayName: "Wukong",
+            iconUrl: "assets/hero-icons/lol/MonkeyKing.png",
+            localizedNames: {
+              "zh-TW": expect.any(String)
+            }
+          })
+        ]),
+        rulesets: expect.arrayContaining([
+          expect.objectContaining({
+            id: "lol-sample-standard-5v5",
+            gameCode: "lol"
+          })
+        ])
+      }
+    });
+
+    const lolBody = lolResponse.body as {
+      data: {
+        heroCount: number;
+        heroes: Array<{
+          id: string;
+          displayName: string;
+          iconUrl?: string;
+          localizedNames?: Record<string, string>;
+          metadata?: Record<string, unknown>;
+        }>;
+      };
+    };
+    const lolHeroNames = new Set(lolBody.data.heroes.map((hero) => hero.displayName));
+    const localizedHeroCount = lolBody.data.heroes.filter((hero) => {
+      const localizedName = hero.localizedNames?.["zh-TW"];
+
+      return typeof localizedName === "string" && localizedName.trim().length > 0;
+    }).length;
+
+    expect(lolBody.data.heroCount).toBeGreaterThan(160);
+    expect(lolBody.data.heroCount).toBe(LOL_GENERATED_CHAMPION_RECORDS.length);
+    expect(lolBody.data.heroCount).not.toBe(20);
+    expect(localizedHeroCount).toBe(lolBody.data.heroCount);
+    const difficultChampionNames = [
+      "Kai'Sa",
+      "Kha'Zix",
+      "Cho'Gath",
+      "Dr. Mundo",
+      "Nunu & Willump",
+      "Miss Fortune",
+      "Twisted Fate",
+      "Jarvan IV",
+      "Aurelion Sol",
+      "Wukong",
+      "Renata Glasc"
+    ] as const;
+
+    difficultChampionNames.forEach((displayName) => {
+      expect(lolHeroNames.has(displayName)).toBe(true);
+    });
+    expect(lolHeroNames.has("Vanguard")).toBe(false);
+    expect(JSON.stringify(lolResponse.body)).not.toMatch(/https?:\/\//i);
 
     expect(missingResponse.status).toBe(404);
     expectApiEnvelope(missingResponse.body, false);
