@@ -4,6 +4,7 @@ import type {
   DraftAction,
   DraftActionStatus,
   DraftActionType,
+  DraftFinalLineupState,
   DraftPhaseDefinition,
   DraftRuleset,
   Hero,
@@ -11,9 +12,10 @@ import type {
   ThemeConfig
 } from "@mmbt/shared-types";
 
-import type { OverlayClientState, OverlayRuntimeState } from "../client/types";
+import type { OverlayClientState, OverlayDraftSummary, OverlayRuntimeState } from "../client/types";
 import { OverlayRouteView } from "../routes/OverlayRouteView";
 import { parseOverlayRoute } from "../routes/route";
+import { overlayReducer } from "../state/overlayState";
 
 const timestamp = "2026-06-02T06:00:00.000Z";
 
@@ -323,6 +325,55 @@ function renderDraft(path = "/overlay/draft/match_grand-final", search = "", sta
   );
 }
 
+function createCompleteSnapshot(
+  finalLineup?: DraftFinalLineupState
+): OverlayRuntimeState {
+  const completeActions = createActions("COMPLETE");
+  const baseSnapshot = createSnapshot();
+
+  return createSnapshot({
+    drafts: {
+      draft_001: {
+        ...baseSnapshot.drafts.draft_001,
+        status: "COMPLETE",
+        currentPhaseIndex: phases.length,
+        currentPhase: null,
+        currentActionIds: [],
+        timer: {
+          isRunning: false,
+          remainingSeconds: 0,
+          originalSeconds: 30
+        },
+        lockedHeroIds: completeActions.map((action) => action.heroId).filter(Boolean) as string[],
+        bannedHeroIds: ["hero_moon", "hero_sun", "hero_river", "hero_storm"],
+        pickedHeroIds: ["hero_ember", "hero_oath", "hero_sun", "hero_river"],
+        actionCounts: {
+          total: completeActions.length,
+          pending: 0,
+          hover: 0,
+          locked: completeActions.length,
+          skipped: 0,
+          cancelled: 0
+        },
+        actions: completeActions,
+        finalLineup
+      }
+    }
+  });
+}
+
+function expectActionOrder(markup: string, actionIds: string[]): void {
+  let previousIndex = -1;
+
+  actionIds.forEach((actionId) => {
+    const marker = `data-testid="draft-slot-${actionId}"`;
+    const currentIndex = markup.indexOf(marker);
+
+    expect(currentIndex).toBeGreaterThan(previousIndex);
+    previousIndex = currentIndex;
+  });
+}
+
 describe("draft overlay", () => {
   it("renders the full draft overlay when data exists", () => {
     const markup = renderDraft();
@@ -372,41 +423,177 @@ describe("draft overlay", () => {
   });
 
   it("renders completed draft state while preserving final picks and bans", () => {
-    const completeActions = createActions("COMPLETE");
-    const snapshot = createSnapshot({
-      drafts: {
-        draft_001: {
-          ...createSnapshot().drafts.draft_001,
-          status: "COMPLETE",
-          currentPhaseIndex: phases.length,
-          currentPhase: null,
-          currentActionIds: [],
-          timer: {
-            isRunning: false,
-            remainingSeconds: 0,
-            originalSeconds: 30
-          },
-          lockedHeroIds: completeActions.map((action) => action.heroId).filter(Boolean) as string[],
-          bannedHeroIds: ["hero_moon", "hero_sun", "hero_river", "hero_storm"],
-          pickedHeroIds: ["hero_ember", "hero_oath", "hero_sun", "hero_river"],
-          actionCounts: {
-            total: completeActions.length,
-            pending: 0,
-            hover: 0,
-            locked: completeActions.length,
-            skipped: 0,
-            cancelled: 0
-          },
-          actions: completeActions
-        }
-      }
-    });
+    const snapshot = createCompleteSnapshot();
     const markup = renderDraft("/overlay/draft/match_grand-final", "", createClientState(snapshot));
 
     expect(markup).toContain('data-draft-status="COMPLETE"');
     expect(markup).toContain("Draft Complete");
     expect(markup).toContain("Storm Caller");
     expect(markup).toContain("River Guide");
+  });
+
+  it("renders locked pick order when no final lineup exists", () => {
+    const markup = renderDraft(
+      "/overlay/draft/match_grand-final",
+      "",
+      createClientState(createCompleteSnapshot())
+    );
+
+    expectActionOrder(markup, ["pick-blue-1:slot-0", "pick-blue-2:slot-0"]);
+    expectActionOrder(markup, ["pick-red-1:slot-0", "pick-red-2:slot-0"]);
+  });
+
+  it("renders Blue final lineup order when finalLineupBySide.BLUE exists", () => {
+    const markup = renderDraft(
+      "/overlay/draft/match_grand-final",
+      "",
+      createClientState(
+        createCompleteSnapshot({
+          status: "ACTIVE",
+          finalLineupBySide: {
+            BLUE: ["pick-blue-2:slot-0", "pick-blue-1:slot-0"]
+          },
+          lineupPhaseStartedAt: timestamp,
+          updatedAt: timestamp
+        })
+      )
+    );
+
+    expectActionOrder(markup, ["pick-blue-2:slot-0", "pick-blue-1:slot-0"]);
+    expectActionOrder(markup, ["pick-red-1:slot-0", "pick-red-2:slot-0"]);
+  });
+
+  it("renders Red final lineup order when finalLineupBySide.RED exists", () => {
+    const markup = renderDraft(
+      "/overlay/draft/match_grand-final",
+      "",
+      createClientState(
+        createCompleteSnapshot({
+          status: "CONFIRMED",
+          finalLineupBySide: {
+            RED: ["pick-red-2:slot-0", "pick-red-1:slot-0"]
+          },
+          lineupPhaseStartedAt: timestamp,
+          lineupConfirmedAt: timestamp,
+          updatedAt: timestamp
+        })
+      )
+    );
+
+    expectActionOrder(markup, ["pick-blue-1:slot-0", "pick-blue-2:slot-0"]);
+    expectActionOrder(markup, ["pick-red-2:slot-0", "pick-red-1:slot-0"]);
+  });
+
+  it("handles Blue and Red final lineup order independently", () => {
+    const markup = renderDraft(
+      "/overlay/draft/match_grand-final",
+      "",
+      createClientState(
+        createCompleteSnapshot({
+          status: "ACTIVE",
+          finalLineupBySide: {
+            BLUE: ["pick-blue-2:slot-0"],
+            RED: ["pick-red-2:slot-0", "pick-red-1:slot-0"]
+          },
+          lineupPhaseStartedAt: timestamp,
+          updatedAt: timestamp
+        })
+      )
+    );
+
+    expectActionOrder(markup, ["pick-blue-1:slot-0", "pick-blue-2:slot-0"]);
+    expectActionOrder(markup, ["pick-red-2:slot-0", "pick-red-1:slot-0"]);
+  });
+
+  it("updates pick order when a draft update contains changed finalLineupBySide", () => {
+    const baseState = createClientState(createCompleteSnapshot());
+    const updatedSnapshot = createCompleteSnapshot({
+      status: "ACTIVE",
+      finalLineupBySide: {
+        BLUE: ["pick-blue-2:slot-0", "pick-blue-1:slot-0"],
+        RED: ["pick-red-2:slot-0", "pick-red-1:slot-0"]
+      },
+      lineupPhaseStartedAt: timestamp,
+      updatedAt: "2026-06-02T06:00:05.000Z"
+    });
+    const updatedDraft = updatedSnapshot.drafts.draft_001 as OverlayDraftSummary;
+    const updatedState = overlayReducer(baseState, {
+      type: "socket:draft-updated",
+      envelope: {
+        type: "draft:updated",
+        timestamp: "2026-06-02T06:00:05.000Z",
+        payload: {
+          revision: 10,
+          reason: "DRAFT_LINEUP_REORDERED",
+          draftId: "draft_001",
+          matchId: "match_grand-final",
+          gameId: "game_001",
+          draft: {
+            summary: updatedDraft,
+            draft: {
+              id: updatedDraft.id,
+              gameId: updatedDraft.gameId,
+              rulesetId: updatedDraft.rulesetId,
+              gameCode: updatedDraft.gameCode,
+              status: updatedDraft.status,
+              currentPhaseIndex: updatedDraft.currentPhaseIndex,
+              timer: updatedDraft.timer,
+              actions: updatedDraft.actions ?? [],
+              lockedHeroIds: updatedDraft.lockedHeroIds,
+              bannedHeroIds: updatedDraft.bannedHeroIds,
+              pickedHeroIds: updatedDraft.pickedHeroIds,
+              finalLineup: updatedDraft.finalLineup,
+              updatedAt: updatedDraft.updatedAt
+            }
+          }
+        }
+      }
+    });
+    const markup = renderDraft("/overlay/draft/match_grand-final", "", updatedState);
+
+    expectActionOrder(markup, ["pick-blue-2:slot-0", "pick-blue-1:slot-0"]);
+    expectActionOrder(markup, ["pick-red-2:slot-0", "pick-red-1:slot-0"]);
+  });
+
+  it("falls back safely when final lineup entries are invalid or partial", () => {
+    const invalidOrders: DraftFinalLineupState[] = [
+      {
+        status: "ACTIVE",
+        finalLineupBySide: {
+          BLUE: ["pick-blue-2:slot-0"]
+        }
+      },
+      {
+        status: "ACTIVE",
+        finalLineupBySide: {
+          BLUE: ["pick-blue-2:slot-0", "pick-blue-2:slot-0"]
+        }
+      },
+      {
+        status: "ACTIVE",
+        finalLineupBySide: {
+          BLUE: ["pick-red-1:slot-0", "pick-blue-1:slot-0"]
+        }
+      },
+      {
+        status: "ACTIVE",
+        finalLineupBySide: {
+          BLUE: ["missing-action", "pick-blue-1:slot-0"]
+        }
+      }
+    ];
+
+    invalidOrders.forEach((finalLineup) => {
+      const markup = renderDraft(
+        "/overlay/draft/match_grand-final",
+        "",
+        createClientState(createCompleteSnapshot(finalLineup))
+      );
+
+      expect(markup).toContain('data-testid="draft-overlay"');
+      expectActionOrder(markup, ["pick-blue-1:slot-0", "pick-blue-2:slot-0"]);
+      expectActionOrder(markup, ["pick-red-1:slot-0", "pick-red-2:slot-0"]);
+    });
   });
 
   it("renders safe missing match and missing draft states", () => {
@@ -446,6 +633,11 @@ describe("draft overlay", () => {
       "Undo",
       "Reset Draft",
       "Complete Draft",
+      "Confirm Final Lineup",
+      "Reset side to pick order",
+      "Move Up",
+      "Move Down",
+      "Swap Order",
       "Take to Program",
       "Clear Program",
       "Trigger Emergency"

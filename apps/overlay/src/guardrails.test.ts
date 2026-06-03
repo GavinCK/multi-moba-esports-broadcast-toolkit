@@ -36,6 +36,7 @@ describe("overlay source guardrails", () => {
     expect(source).not.toMatch(
       /fetch\(.*POST|method:\s*["']POST|axios\.post|\/api\/drafts\/.*\/start|\/api\/drafts\/.*\/pause|\/api\/drafts\/.*\/resume|\/api\/drafts\/.*\/undo|\/api\/drafts\/.*\/redo|\/api\/drafts\/.*\/reset|\/api\/drafts\/.*\/complete|\/api\/drafts\/.*\/actions\/.*\/hover|\/api\/drafts\/.*\/actions\/.*\/lock|\/api\/production\/state|\/api\/production\/preview|\/api\/production\/take|\/api\/production\/clear|\/api\/production\/emergency/
     );
+    expect(source).not.toMatch(/\/api\/drafts\/.*\/lineup\/(?:reorder|reset|confirm)/);
   });
 
   it("does not emit mutation Socket.IO events", () => {

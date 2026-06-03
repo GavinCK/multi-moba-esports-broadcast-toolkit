@@ -403,6 +403,61 @@ function filterSlots(
   return slots.filter((slot) => slot.action.team === team && slot.action.type === actionType);
 }
 
+function getLockedPickSlotsByActionId(slots: DraftOverlaySlot[]): Map<string, DraftOverlaySlot> {
+  return new Map(
+    slots
+      .filter(
+        (slot) =>
+          slot.action.type === "PICK" &&
+          slot.action.status === "LOCKED" &&
+          typeof slot.action.heroId === "string" &&
+          slot.action.heroId.length > 0
+      )
+      .map((slot) => [slot.action.id, slot])
+  );
+}
+
+function resolvePickSlotsForSide(
+  slots: DraftOverlaySlot[],
+  draft: OverlayDraftSummary,
+  side: DraftSide
+): DraftOverlaySlot[] {
+  const pickSlots = filterSlots(slots, side, "PICK");
+  const finalLineupOrder = draft.finalLineup?.finalLineupBySide?.[side];
+
+  if (!Array.isArray(finalLineupOrder)) {
+    return pickSlots;
+  }
+
+  const lockedPickSlotsByActionId = getLockedPickSlotsByActionId(pickSlots);
+
+  if (finalLineupOrder.length !== lockedPickSlotsByActionId.size) {
+    return pickSlots;
+  }
+
+  if (
+    finalLineupOrder.some(
+      (actionId) => typeof actionId !== "string" || actionId.length === 0
+    )
+  ) {
+    return pickSlots;
+  }
+
+  const uniqueActionIds = new Set(finalLineupOrder);
+
+  if (uniqueActionIds.size !== finalLineupOrder.length) {
+    return pickSlots;
+  }
+
+  const orderedSlots = finalLineupOrder.map((actionId) => lockedPickSlotsByActionId.get(actionId));
+
+  if (orderedSlots.some((slot) => slot === undefined)) {
+    return pickSlots;
+  }
+
+  return orderedSlots as DraftOverlaySlot[];
+}
+
 function getPhaseLabel(draft: OverlayDraftSummary | null, ruleset: DraftRuleset | null): string {
   if (!draft) {
     return "Draft standby";
@@ -527,6 +582,8 @@ export function selectDraftOverlayViewModel(
 
   const slots = draft ? buildSlots(snapshot, draft, ruleset) : [];
   const activeSide = getActiveSide(draft, ruleset);
+  const bluePicks = draft ? resolvePickSlotsForSide(slots, draft, "BLUE") : [];
+  const redPicks = draft ? resolvePickSlotsForSide(slots, draft, "RED") : [];
 
   return {
     state: draft ? "ready" : "missing-draft",
@@ -539,8 +596,8 @@ export function selectDraftOverlayViewModel(
     redTeam,
     blueBans: filterSlots(slots, "BLUE", "BAN"),
     redBans: filterSlots(slots, "RED", "BAN"),
-    bluePicks: filterSlots(slots, "BLUE", "PICK"),
-    redPicks: filterSlots(slots, "RED", "PICK"),
+    bluePicks,
+    redPicks,
     timerText: draft ? formatTimer(draft.timer.remainingSeconds) : "--:--",
     timerState: getTimerState(draft),
     phaseLabel: getPhaseLabel(draft, ruleset),

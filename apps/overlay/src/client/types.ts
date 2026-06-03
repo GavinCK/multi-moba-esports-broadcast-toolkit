@@ -1,5 +1,6 @@
 import type {
   DraftPhaseDefinition,
+  DraftFinalLineupState,
   DraftRuleset,
   DraftAction,
   DraftTimerState,
@@ -69,6 +70,7 @@ export interface OverlayDraftSummary {
   lockedHeroIds: string[];
   bannedHeroIds: string[];
   pickedHeroIds: string[];
+  finalLineup?: DraftFinalLineupState;
   updatedAt?: string;
   actions?: DraftAction[];
 }
@@ -85,6 +87,7 @@ export interface OverlayPublicDraftState {
   lockedHeroIds: string[];
   bannedHeroIds: string[];
   pickedHeroIds: string[];
+  finalLineup?: DraftFinalLineupState;
   createdAt?: string;
   updatedAt?: string;
 }

@@ -1,4 +1,4 @@
-import type { SocketEnvelope } from "@mmbt/shared-types";
+import type { DraftFinalLineupState, SocketEnvelope } from "@mmbt/shared-types";
 
 import type {
   OverlayClientState,
@@ -104,6 +104,28 @@ function applySnapshot(
   };
 }
 
+function cloneFinalLineup(
+  finalLineup: DraftFinalLineupState | undefined
+): DraftFinalLineupState | undefined {
+  return finalLineup
+    ? {
+        status: finalLineup.status,
+        finalLineupBySide: {
+          BLUE: finalLineup.finalLineupBySide.BLUE
+            ? [...finalLineup.finalLineupBySide.BLUE]
+            : undefined,
+          RED: finalLineup.finalLineupBySide.RED
+            ? [...finalLineup.finalLineupBySide.RED]
+            : undefined
+        },
+        lineupPhaseStartedAt: finalLineup.lineupPhaseStartedAt,
+        lineupConfirmedAt: finalLineup.lineupConfirmedAt,
+        confirmedByOperatorId: finalLineup.confirmedByOperatorId,
+        updatedAt: finalLineup.updatedAt
+      }
+    : undefined;
+}
+
 function applyDraftUpdate(
   state: OverlayClientState,
   envelope: SocketEnvelope<OverlayRealtimeDraftPayload>
@@ -136,6 +158,7 @@ function applyDraftUpdate(
           lockedHeroIds: [...draft.lockedHeroIds],
           bannedHeroIds: [...draft.bannedHeroIds],
           pickedHeroIds: [...draft.pickedHeroIds],
+          finalLineup: cloneFinalLineup(draft.finalLineup ?? summary.finalLineup),
           actions: draft.actions.map((action) => ({ ...action })),
           updatedAt: draft.updatedAt ?? envelope.timestamp
         }
