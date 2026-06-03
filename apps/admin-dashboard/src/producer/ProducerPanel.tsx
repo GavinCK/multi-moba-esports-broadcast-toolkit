@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import type { GraphicType, JsonValue, ProductionState } from "@mmbt/shared-types";
+import type {
+  GraphicType,
+  JsonValue,
+  Match,
+  MatchPresentationMetadata,
+  PresentationSide,
+  ProductionState,
+  SeriesFormat
+} from "@mmbt/shared-types";
 
 import type { DashboardApiClient } from "../client/apiClient";
 import { toDashboardApiError } from "../client/apiClient";
@@ -56,6 +64,7 @@ const EMERGENCY_MESSAGES = [
   "Broadcast Standby",
   "Emergency Mode"
 ] as const;
+const PRESENTATION_SAVE_FEEDBACK_MS = 500;
 
 interface ProducerPanelError {
   code: string;
@@ -73,6 +82,22 @@ interface PendingConfirmation {
 interface ProductionMutationResponse {
   revision: number;
   production: DashboardProductionState;
+}
+
+interface MatchPresentationMutationResponse {
+  revision: number;
+  match: Match;
+}
+
+interface MatchPresentationFormState {
+  matchLabel: string;
+  patchLabel: string;
+  seriesFormat: SeriesFormat;
+  gameNumber: string;
+  blueScore: string;
+  redScore: string;
+  firstPickSide: PresentationSide;
+  sideStatusLabel: string;
 }
 
 export interface ProducerPanelProps {
@@ -170,6 +195,108 @@ function getGraphicTone(status: string | undefined): "good" | "warn" | "danger" 
     default:
       return "neutral";
   }
+}
+
+function toSeriesFormat(value: unknown, fallback: SeriesFormat = "BO1"): SeriesFormat {
+  return value === "BO1" || value === "BO3" || value === "BO5" ? value : fallback;
+}
+
+function toPresentationSide(value: unknown, fallback: PresentationSide = "BLUE"): PresentationSide {
+  return value === "BLUE" || value === "RED" ? value : fallback;
+}
+
+function toIntegerString(value: unknown, fallback: number): string {
+  return Number.isInteger(value) ? String(value) : String(fallback);
+}
+
+function getPresentationDefaults(match: DashboardMatch): Required<Omit<MatchPresentationMetadata, "playerDisplayOrderBySide">> {
+  const presentation = match.presentation ?? {};
+  const scoreBySide = presentation.scoreBySide ?? {
+    BLUE: match.score.blue,
+    RED: match.score.red
+  };
+
+  return {
+    matchLabel: presentation.matchLabel ?? match.title,
+    patchLabel: presentation.patchLabel ?? "",
+    seriesFormat: toSeriesFormat(presentation.seriesFormat ?? match.format),
+    gameNumber: presentation.gameNumber ?? match.currentGameNumber,
+    scoreBySide: {
+      BLUE: scoreBySide.BLUE,
+      RED: scoreBySide.RED
+    },
+    firstPickSide: toPresentationSide(presentation.firstPickSide),
+    sideStatusLabel: presentation.sideStatusLabel ?? ""
+  };
+}
+
+function createPresentationFormState(match: DashboardMatch | null): MatchPresentationFormState {
+  if (!match) {
+    return {
+      matchLabel: "",
+      patchLabel: "",
+      seriesFormat: "BO1",
+      gameNumber: "1",
+      blueScore: "0",
+      redScore: "0",
+      firstPickSide: "BLUE",
+      sideStatusLabel: ""
+    };
+  }
+
+  const presentation = getPresentationDefaults(match);
+
+  return {
+    matchLabel: presentation.matchLabel,
+    patchLabel: presentation.patchLabel,
+    seriesFormat: presentation.seriesFormat,
+    gameNumber: toIntegerString(presentation.gameNumber, match.currentGameNumber),
+    blueScore: toIntegerString(presentation.scoreBySide.BLUE, match.score.blue),
+    redScore: toIntegerString(presentation.scoreBySide.RED, match.score.red),
+    firstPickSide: presentation.firstPickSide,
+    sideStatusLabel: presentation.sideStatusLabel
+  };
+}
+
+function readPositiveInteger(value: string): number | null {
+  const parsed = Number(value);
+
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
+}
+
+function readNonNegativeInteger(value: string): number | null {
+  const parsed = Number(value);
+
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function addTrimmedStringField(
+  payload: Record<string, unknown>,
+  field: "matchLabel" | "patchLabel" | "sideStatusLabel",
+  value: string
+): void {
+  const trimmed = value.trim();
+
+  if (trimmed.length > 0) {
+    payload[field] = trimmed;
+  }
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
+}
+
+function mergeRuntimeMatchWithPresentationResponse(
+  currentMatch: DashboardMatch,
+  responseMatch: Match
+): DashboardMatch {
+  return {
+    ...currentMatch,
+    ...responseMatch,
+    games: currentMatch.games
+  };
 }
 
 function findPreferredMatch(
@@ -358,6 +485,13 @@ export function ProducerPanel(props: ProducerPanelProps): ReactNode {
   const [selectedProductionStatus, setSelectedProductionStatus] = useState<ProductionState>("PRE_SHOW");
   const [selectedGraphicType, setSelectedGraphicType] = useState<GraphicType>("DRAFT_OVERLAY");
   const [emergencyMessage, setEmergencyMessage] = useState<(typeof EMERGENCY_MESSAGES)[number]>("Technical Pause");
+  const [presentationForm, setPresentationForm] = useState<MatchPresentationFormState>(() =>
+    createPresentationFormState(null)
+  );
+  const [presentationSaving, setPresentationSaving] = useState(false);
+  const [presentationStatusMessage, setPresentationStatusMessage] = useState<string | null>(null);
+  const [presentationError, setPresentationError] = useState<ProducerPanelError | null>(null);
+  const [presentationMatchOverrides, setPresentationMatchOverrides] = useState<Record<string, DashboardMatch>>({});
   const [mutationBusy, setMutationBusy] = useState(false);
   const [panelError, setPanelError] = useState<ProducerPanelError | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -384,6 +518,10 @@ export function ProducerPanel(props: ProducerPanelProps): ReactNode {
 
     return findPreferredMatch(snapshot, selectedMatchId);
   }, [selectedMatchId, snapshot]);
+
+  const visibleSelectedMatch = selectedMatch
+    ? presentationMatchOverrides[selectedMatch.id] ?? selectedMatch
+    : null;
 
   const selectedGame = useMemo(() => {
     if (!snapshot) {
@@ -419,6 +557,18 @@ export function ProducerPanel(props: ProducerPanelProps): ReactNode {
     }
   }, [selectedDraft, selectedDraftId]);
 
+  useEffect(() => {
+    setPresentationForm(createPresentationFormState(visibleSelectedMatch));
+  }, [
+    visibleSelectedMatch?.currentGameNumber,
+    visibleSelectedMatch?.format,
+    visibleSelectedMatch?.id,
+    visibleSelectedMatch?.presentation,
+    visibleSelectedMatch?.score.blue,
+    visibleSelectedMatch?.score.red,
+    visibleSelectedMatch?.title
+  ]);
+
   async function refreshAfterMutation(): Promise<void> {
     await Promise.resolve(props.onRefresh());
   }
@@ -426,6 +576,8 @@ export function ProducerPanel(props: ProducerPanelProps): ReactNode {
   function clearFeedback(): void {
     setPanelError(null);
     setSuccessMessage(null);
+    setPresentationStatusMessage(null);
+    setPresentationError(null);
   }
 
   async function runMutation(
@@ -443,6 +595,103 @@ export function ProducerPanel(props: ProducerPanelProps): ReactNode {
       setPanelError(toPanelError(error));
     } finally {
       setMutationBusy(false);
+    }
+  }
+
+  function updatePresentationForm<K extends keyof MatchPresentationFormState>(
+    field: K,
+    value: MatchPresentationFormState[K]
+  ): void {
+    setPresentationForm((current) => ({
+      ...current,
+      [field]: value
+    }));
+  }
+
+  async function saveMatchPresentation(): Promise<void> {
+    clearFeedback();
+
+    if (!selectedMatch) {
+      setPanelError({
+        code: "MATCH_NOT_SELECTED",
+        message: "Select a match before saving presentation metadata."
+      });
+      return;
+    }
+
+    if (presentationForm.matchLabel.trim().length === 0) {
+      setPanelError({
+        code: "MATCH_PRESENTATION_INVALID_FORM",
+        message: "Match Label must not be empty."
+      });
+      return;
+    }
+
+    const gameNumber = readPositiveInteger(presentationForm.gameNumber);
+    const blueScore = readNonNegativeInteger(presentationForm.blueScore);
+    const redScore = readNonNegativeInteger(presentationForm.redScore);
+
+    if (gameNumber === null) {
+      setPanelError({
+        code: "MATCH_PRESENTATION_INVALID_FORM",
+        message: "Game Number must be a positive integer."
+      });
+      return;
+    }
+
+    if (blueScore === null || redScore === null) {
+      setPanelError({
+        code: "MATCH_PRESENTATION_INVALID_FORM",
+        message: "BLUE Score and RED Score must be non-negative integers."
+      });
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      operatorId: getProducerId(producerLabel),
+      seriesFormat: presentationForm.seriesFormat,
+      gameNumber,
+      scoreBySide: {
+        BLUE: blueScore,
+        RED: redScore
+      },
+      firstPickSide: presentationForm.firstPickSide
+    };
+
+    addTrimmedStringField(payload, "matchLabel", presentationForm.matchLabel);
+    addTrimmedStringField(payload, "patchLabel", presentationForm.patchLabel);
+    addTrimmedStringField(payload, "sideStatusLabel", presentationForm.sideStatusLabel);
+
+    const saveStartedAt = Date.now();
+    setPresentationSaving(true);
+    setPresentationStatusMessage("Saving presentation metadata...");
+
+    try {
+      const response = await props.apiClient.patch<MatchPresentationMutationResponse>(
+        `/api/matches/${selectedMatch.id}/presentation`,
+        payload
+      );
+      const nextMatch = mergeRuntimeMatchWithPresentationResponse(selectedMatch, response.match);
+
+      setPresentationMatchOverrides((current) => ({
+        ...current,
+        [selectedMatch.id]: nextMatch
+      }));
+      setPresentationForm(createPresentationFormState(nextMatch));
+      setSuccessMessage("Match presentation metadata updated.");
+      setPresentationStatusMessage("Match presentation metadata updated.");
+      await refreshAfterMutation();
+    } catch (error) {
+      const nextError = toPanelError(error);
+      setPanelError(nextError);
+      setPresentationError(nextError);
+      setPresentationStatusMessage(null);
+    } finally {
+      const elapsed = Date.now() - saveStartedAt;
+      if (elapsed < PRESENTATION_SAVE_FEEDBACK_MS) {
+        await wait(PRESENTATION_SAVE_FEEDBACK_MS - elapsed);
+      }
+      setPresentationSaving(false);
     }
   }
 
@@ -478,6 +727,7 @@ export function ProducerPanel(props: ProducerPanelProps): ReactNode {
   const matchingDrafts = Object.values(snapshot.drafts).filter(
     (draft) => !selectedMatch || draft.matchId === selectedMatch.id
   );
+  const visiblePresentation = visibleSelectedMatch ? getPresentationDefaults(visibleSelectedMatch) : null;
   const previewReady = production.graphicTakeState.previewPayload !== null;
   const programReady = production.graphicTakeState.programPayload !== null;
   const publicEmergencyMessageState = production.emergency.message ? "Set" : "Not set";
@@ -731,10 +981,160 @@ export function ProducerPanel(props: ProducerPanelProps): ReactNode {
         </div>
       </Section>
 
+      <Section title="Match Presentation">
+        <div className="operator-selector-grid">
+          <label className="field-label">
+            Match Label
+            <input
+              value={presentationForm.matchLabel}
+              onChange={(event) => updatePresentationForm("matchLabel", event.currentTarget.value)}
+              disabled={!selectedMatch || presentationSaving}
+            />
+          </label>
+          <label className="field-label">
+            Patch Label
+            <input
+              value={presentationForm.patchLabel}
+              onChange={(event) => updatePresentationForm("patchLabel", event.currentTarget.value)}
+              disabled={!selectedMatch || presentationSaving}
+            />
+          </label>
+          <label className="field-label">
+            Series Format
+            <select
+              value={presentationForm.seriesFormat}
+              onChange={(event) => updatePresentationForm("seriesFormat", event.currentTarget.value as SeriesFormat)}
+              disabled={!selectedMatch || presentationSaving}
+            >
+              <option value="BO1">BO1</option>
+              <option value="BO3">BO3</option>
+              <option value="BO5">BO5</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="operator-selector-grid producer-selector-grid">
+          <label className="field-label">
+            Game Number
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={presentationForm.gameNumber}
+              onChange={(event) => updatePresentationForm("gameNumber", event.currentTarget.value)}
+              disabled={!selectedMatch || presentationSaving}
+            />
+          </label>
+          <label className="field-label">
+            BLUE Score
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={presentationForm.blueScore}
+              onChange={(event) => updatePresentationForm("blueScore", event.currentTarget.value)}
+              disabled={!selectedMatch || presentationSaving}
+            />
+          </label>
+          <label className="field-label">
+            RED Score
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={presentationForm.redScore}
+              onChange={(event) => updatePresentationForm("redScore", event.currentTarget.value)}
+              disabled={!selectedMatch || presentationSaving}
+            />
+          </label>
+        </div>
+
+        <div className="operator-selector-grid producer-selector-grid">
+          <label className="field-label">
+            First Pick Side
+            <select
+              value={presentationForm.firstPickSide}
+              onChange={(event) => updatePresentationForm("firstPickSide", event.currentTarget.value as PresentationSide)}
+              disabled={!selectedMatch || presentationSaving}
+            >
+              <option value="BLUE">BLUE</option>
+              <option value="RED">RED</option>
+            </select>
+          </label>
+          <label className="field-label">
+            Side Status Label
+            <input
+              value={presentationForm.sideStatusLabel}
+              onChange={(event) => updatePresentationForm("sideStatusLabel", event.currentTarget.value)}
+              disabled={!selectedMatch || presentationSaving}
+            />
+          </label>
+          <div className="field-action">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!selectedMatch || presentationSaving}
+              onClick={() => setPresentationForm(createPresentationFormState(visibleSelectedMatch))}
+            >
+              Reset Form
+            </button>
+          </div>
+        </div>
+
+        <div className="operator-controls producer-selector-grid">
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={!selectedMatch || presentationSaving}
+            onClick={() => void saveMatchPresentation()}
+          >
+            {presentationSaving ? "Saving..." : "Save Presentation"}
+          </button>
+        </div>
+        {presentationStatusMessage ? (
+          <p className={presentationSaving ? "inline-warning" : "inline-success"} role="status">
+            {presentationStatusMessage}
+          </p>
+        ) : null}
+        {presentationError ? (
+          <p className="inline-error" role="alert">
+            {presentationError.code}: {presentationError.message}
+          </p>
+        ) : null}
+      </Section>
+
+      <Section title="Current Presentation">
+        <dl className="metric-grid">
+          <Metric label="Match label" value={visiblePresentation?.matchLabel ?? "No match selected"} />
+          <Metric label="Patch label" value={visiblePresentation?.patchLabel || "Not set"} />
+          <Metric label="Series format" value={visiblePresentation?.seriesFormat ?? "Not set"} />
+          <Metric label="Game number" value={visiblePresentation?.gameNumber ?? "Unknown"} />
+          <Metric
+            label="Presentation score"
+            value={
+              visiblePresentation
+                ? `${visiblePresentation.scoreBySide.BLUE} - ${visiblePresentation.scoreBySide.RED}`
+                : "Unknown"
+            }
+          />
+          <Metric label="First pick side" value={visiblePresentation?.firstPickSide ?? "BLUE"} />
+          <Metric label="Side status" value={visiblePresentation?.sideStatusLabel || "Not set"} />
+        </dl>
+      </Section>
+
       <Section title="Active Match / Game / Draft">
         <dl className="metric-grid">
-          <Metric label="Match" value={selectedMatch?.title ?? "No match selected"} />
-          <Metric label="Score" value={selectedMatch ? `${selectedMatch.score.blue} - ${selectedMatch.score.red}` : "Unknown"} />
+          <Metric label="Match" value={visiblePresentation?.matchLabel ?? selectedMatch?.title ?? "No match selected"} />
+          <Metric
+            label="Score"
+            value={
+              visiblePresentation
+                ? `${visiblePresentation.scoreBySide.BLUE} - ${visiblePresentation.scoreBySide.RED}`
+                : selectedMatch
+                  ? `${selectedMatch.score.blue} - ${selectedMatch.score.red}`
+                  : "Unknown"
+            }
+          />
           <Metric label="Game" value={selectedGame ? `Game ${selectedGame.gameNumber}` : "Not selected"} />
           <Metric label="Game status" value={selectedGame?.status ?? "Unknown"} />
           <Metric label="Blue team" value={blueTeamName} />

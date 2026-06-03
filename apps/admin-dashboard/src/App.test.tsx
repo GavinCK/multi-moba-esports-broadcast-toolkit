@@ -1084,6 +1084,12 @@ function createDraftApiClient(
 
       return mutationResponse as TData;
     },
+    async patch<TData>(): Promise<TData> {
+      throw new DashboardApiError({
+        code: "TEST_NOT_FOUND",
+        message: "Unhandled draft test PATCH"
+      });
+    },
     async getHealth() {
       return state.health ?? createSnapshot().health;
     },
@@ -1135,6 +1141,12 @@ function createLoLDraftApiClient(state: DashboardClientState): {
       postCalls.push({ path, body });
 
       return mutationResponse as TData;
+    },
+    async patch<TData>(): Promise<TData> {
+      throw new DashboardApiError({
+        code: "TEST_NOT_FOUND",
+        message: "Unhandled LoL draft test PATCH"
+      });
     },
     async getHealth() {
       return state.health ?? createSnapshot().health;

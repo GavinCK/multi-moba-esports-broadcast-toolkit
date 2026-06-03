@@ -195,6 +195,18 @@ function createSnapshot(
         },
         currentGameNumber: 1,
         status: "READY",
+        presentation: {
+          matchLabel: "Grand Final",
+          patchLabel: "Patch 25.10",
+          seriesFormat: "BO3",
+          gameNumber: 1,
+          scoreBySide: {
+            BLUE: 0,
+            RED: 0
+          },
+          firstPickSide: "BLUE",
+          sideStatusLabel: "Blue side has first pick"
+        },
         games: [
           {
             id: "game_001",
@@ -226,6 +238,18 @@ function createSnapshot(
         },
         currentGameNumber: 1,
         status: "READY",
+        presentation: {
+          matchLabel: "AOV Showcase",
+          patchLabel: "Patch AOV",
+          seriesFormat: "BO1",
+          gameNumber: 1,
+          scoreBySide: {
+            BLUE: 1,
+            RED: 0
+          },
+          firstPickSide: "RED",
+          sideStatusLabel: "Red side starts"
+        },
         games: [
           {
             id: "game_aov-001",
@@ -348,12 +372,15 @@ function createProducerApiClient(
   state: DashboardClientState,
   options: {
     postError?: DashboardApiError;
+    patchError?: DashboardApiError;
   } = {}
 ): {
   apiClient: DashboardApiClient;
   postCalls: Array<{ path: string; body: Record<string, unknown> }>;
+  patchCalls: Array<{ path: string; body: Record<string, unknown> }>;
 } {
   const postCalls: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const patchCalls: Array<{ path: string; body: Record<string, unknown> }> = [];
   const response: { revision: number; production: DashboardProductionState } = {
     revision: (state.snapshot?.revision ?? 0) + 1,
     production: state.snapshot?.production ?? createProductionState()
@@ -386,6 +413,53 @@ function createProducerApiClient(
 
       return response as TData;
     },
+    async patch<TData>(path: string, body: Record<string, unknown>): Promise<TData> {
+      patchCalls.push({ path, body });
+
+      if (options.patchError) {
+        throw options.patchError;
+      }
+
+      const matchId = path.match(/^\/api\/matches\/([^/]+)\/presentation$/u)?.[1];
+      const match = state.snapshot?.matches.find((item) => item.id === matchId);
+
+      if (!match) {
+        throw new DashboardApiError({
+          code: "TEST_NOT_FOUND",
+          message: `Unhandled test PATCH ${path}`
+        });
+      }
+
+      const existingPresentation = match.presentation ?? {};
+      const existingScore = existingPresentation.scoreBySide ?? {
+        BLUE: match.score.blue,
+        RED: match.score.red
+      };
+      const scorePatch = body.scoreBySide as Partial<{ BLUE: number; RED: number }> | undefined;
+
+      return {
+        revision: (state.snapshot?.revision ?? 0) + 1,
+        match: {
+          ...match,
+          presentation: {
+            ...existingPresentation,
+            matchLabel: typeof body.matchLabel === "string" ? body.matchLabel : existingPresentation.matchLabel,
+            patchLabel: typeof body.patchLabel === "string" ? body.patchLabel : existingPresentation.patchLabel,
+            seriesFormat: body.seriesFormat ?? existingPresentation.seriesFormat,
+            gameNumber: body.gameNumber ?? existingPresentation.gameNumber,
+            scoreBySide: {
+              ...existingScore,
+              ...scorePatch
+            },
+            firstPickSide: body.firstPickSide ?? existingPresentation.firstPickSide,
+            sideStatusLabel: typeof body.sideStatusLabel === "string"
+              ? body.sideStatusLabel
+              : existingPresentation.sideStatusLabel,
+            playerDisplayOrderBySide: existingPresentation.playerDisplayOrderBySide
+          }
+        }
+      } as TData;
+    },
     async getHealth() {
       return state.health ?? createSnapshot().health;
     },
@@ -394,13 +468,19 @@ function createProducerApiClient(
     }
   };
 
-  return { apiClient, postCalls };
+  return { apiClient, postCalls, patchCalls };
 }
 
 async function flushAsync(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
+  });
+}
+
+async function waitMilliseconds(milliseconds: number): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, milliseconds));
   });
 }
 
@@ -414,6 +494,22 @@ function findButton(container: HTMLDivElement, label: string): HTMLButtonElement
   }
 
   return button;
+}
+
+function findFieldControl<TElement extends HTMLInputElement | HTMLSelectElement>(
+  container: HTMLDivElement,
+  label: string
+): TElement {
+  const labelElement = Array.from(container.querySelectorAll<HTMLLabelElement>("label.field-label")).find(
+    (item) => item.childNodes[0]?.textContent?.trim() === label
+  );
+  const control = labelElement?.querySelector("input, select");
+
+  if (!control) {
+    throw new Error(`Field not found: ${label}`);
+  }
+
+  return control as TElement;
 }
 
 function findDialogButton(container: HTMLDivElement, label: string): HTMLButtonElement {
@@ -574,6 +670,179 @@ describe("ProducerPanel", () => {
     expect(text).not.toContain("socket_raw_123");
     expect(text).not.toContain("production-log.jsonl");
     expect(text).not.toContain("secret-value");
+  });
+
+  it("renders match presentation controls initialized from selected match metadata", () => {
+    const container = renderProducer(createReadyState());
+    const text = container.textContent ?? "";
+    const seriesSelect = findFieldControl<HTMLSelectElement>(container, "Series Format");
+    const gameNumberInput = findFieldControl<HTMLInputElement>(container, "Game Number");
+    const blueScoreInput = findFieldControl<HTMLInputElement>(container, "BLUE Score");
+    const redScoreInput = findFieldControl<HTMLInputElement>(container, "RED Score");
+
+    expect(text).toContain("Match Presentation");
+    expect(findFieldControl<HTMLInputElement>(container, "Match Label").value).toBe("Grand Final");
+    expect(findFieldControl<HTMLInputElement>(container, "Patch Label").value).toBe("Patch 25.10");
+    expect(Array.from(seriesSelect.options).map((option) => option.value)).toEqual(["BO1", "BO3", "BO5"]);
+    expect(seriesSelect.value).toBe("BO3");
+    expect(gameNumberInput.type).toBe("number");
+    expect(gameNumberInput.value).toBe("1");
+    expect(blueScoreInput.type).toBe("number");
+    expect(blueScoreInput.value).toBe("0");
+    expect(redScoreInput.type).toBe("number");
+    expect(redScoreInput.value).toBe("0");
+    expect(findFieldControl<HTMLSelectElement>(container, "First Pick Side").value).toBe("BLUE");
+    expect(findFieldControl<HTMLInputElement>(container, "Side Status Label").value).toBe("Blue side has first pick");
+  });
+
+  it("saves match presentation metadata through PATCH without calling draft or production endpoints", async () => {
+    const state = createReadyState();
+    const refresh = vi.fn();
+    const { apiClient, patchCalls, postCalls } = createProducerApiClient(state);
+    const container = renderProducer(state, { apiClient, onRefresh: refresh });
+
+    act(() => {
+      setInputValue(findFieldControl<HTMLInputElement>(container, "Match Label"), "Grand Final Updated");
+      setInputValue(findFieldControl<HTMLInputElement>(container, "Patch Label"), "Patch 26.10");
+      setSelectValue(findFieldControl<HTMLSelectElement>(container, "Series Format"), "BO5");
+      setInputValue(findFieldControl<HTMLInputElement>(container, "Game Number"), "2");
+      setInputValue(findFieldControl<HTMLInputElement>(container, "BLUE Score"), "1");
+      setInputValue(findFieldControl<HTMLInputElement>(container, "RED Score"), "0");
+      setSelectValue(findFieldControl<HTMLSelectElement>(container, "First Pick Side"), "BLUE");
+      setInputValue(findFieldControl<HTMLInputElement>(container, "Side Status Label"), "1st Pick");
+    });
+
+    await act(async () => {
+      findButton(container, "Save Presentation").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(patchCalls).toHaveLength(1);
+    expect(postCalls).toHaveLength(0);
+    expect(patchCalls[0]).toEqual({
+      path: "/api/matches/match_grand-final/presentation",
+      body: {
+        operatorId: "producer",
+        matchLabel: "Grand Final Updated",
+        patchLabel: "Patch 26.10",
+        seriesFormat: "BO5",
+        gameNumber: 2,
+        scoreBySide: {
+          BLUE: 1,
+          RED: 0
+        },
+        firstPickSide: "BLUE",
+        sideStatusLabel: "1st Pick"
+      }
+    });
+    expect(JSON.stringify(patchCalls[0]?.body)).not.toContain("playerDisplayOrderBySide");
+    expect(patchCalls[0]?.path).not.toMatch(/\/api\/drafts|lineup|timer|hover|lock|undo|reset|complete/u);
+
+    await waitMilliseconds(550);
+
+    expect(container.textContent).toContain("Match presentation metadata updated.");
+    expect(container.textContent).toContain("Current Presentation");
+    expect(container.textContent).toContain("Grand Final Updated");
+    expect(container.textContent).toContain("Patch 26.10");
+    expect(container.textContent).toContain("BO5");
+    expect(container.textContent).toContain("1 - 0");
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows saving state while the presentation PATCH is in progress", async () => {
+    const state = createReadyState();
+    let resolvePatch: ((value: unknown) => void) | null = null;
+    const baseClient = createProducerApiClient(state);
+    const apiClient: DashboardApiClient = {
+      ...baseClient.apiClient,
+      patch: async <TData,>(): Promise<TData> =>
+        new Promise<TData>((resolve) => {
+          resolvePatch = (value) => resolve(value as TData);
+        })
+    };
+    const container = renderProducer(state, { apiClient });
+
+    await act(async () => {
+      findButton(container, "Save Presentation").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const savingButton = findButton(container, "Saving...");
+    expect(savingButton.disabled).toBe(true);
+
+    await act(async () => {
+      resolvePatch?.({
+        revision: 4,
+        match: state.snapshot?.matches[0] ?? createSnapshot().matches[0]
+      });
+    });
+    await waitMilliseconds(550);
+    await flushAsync();
+
+    expect(findButton(container, "Save Presentation").disabled).toBe(false);
+  });
+
+  it("shows useful API errors when the presentation PATCH is rejected", async () => {
+    const state = createReadyState();
+    const { apiClient } = createProducerApiClient(state, {
+      patchError: new DashboardApiError({
+        code: "MATCH_PRESENTATION_INVALID_PAYLOAD",
+        message: "Presentation field sideStatusLabel must not be empty."
+      })
+    });
+    const container = renderProducer(state, { apiClient });
+
+    await act(async () => {
+      findButton(container, "Save Presentation").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsync();
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("MATCH_PRESENTATION_INVALID_PAYLOAD");
+    expect(text).toContain("Presentation field sideStatusLabel must not be empty.");
+  });
+
+  it("updates the presentation form when the selected match changes", () => {
+    const container = renderProducer(createReadyState());
+
+    act(() => {
+      setSelectValue(findFieldControl<HTMLSelectElement>(container, "Match"), "match_aov-showcase");
+    });
+
+    expect(findFieldControl<HTMLInputElement>(container, "Match Label").value).toBe("AOV Showcase");
+    expect(findFieldControl<HTMLInputElement>(container, "Patch Label").value).toBe("Patch AOV");
+    expect(findFieldControl<HTMLSelectElement>(container, "Series Format").value).toBe("BO1");
+    expect(findFieldControl<HTMLInputElement>(container, "BLUE Score").value).toBe("1");
+    expect(findFieldControl<HTMLSelectElement>(container, "First Pick Side").value).toBe("RED");
+  });
+
+  it("uses safe presentation defaults when old match snapshots have no metadata", () => {
+    const state = createReadyState();
+    const snapshot = state.snapshot;
+
+    if (!snapshot) {
+      throw new Error("Expected ready state snapshot.");
+    }
+
+    snapshot.matches = snapshot.matches.map((match) =>
+      match.id === "match_grand-final"
+        ? {
+            ...match,
+            presentation: undefined
+          }
+        : match
+    );
+
+    const container = renderProducer({
+      ...state,
+      snapshot
+    });
+
+    expect(findFieldControl<HTMLInputElement>(container, "Match Label").value).toBe("Grand Final");
+    expect(findFieldControl<HTMLInputElement>(container, "Patch Label").value).toBe("");
+    expect(findFieldControl<HTMLSelectElement>(container, "Series Format").value).toBe("BO3");
+    expect(findFieldControl<HTMLInputElement>(container, "Game Number").value).toBe("1");
+    expect(findFieldControl<HTMLInputElement>(container, "BLUE Score").value).toBe("0");
+    expect(findFieldControl<HTMLSelectElement>(container, "First Pick Side").value).toBe("BLUE");
   });
 
   it("lets the producer select production context without mutating until Apply is confirmed", async () => {

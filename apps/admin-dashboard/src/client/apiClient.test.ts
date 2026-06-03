@@ -52,6 +52,36 @@ describe("createDashboardApiClient", () => {
     expect(requests[0]?.init?.body).toBe(JSON.stringify({ operatorId: "draft-operator" }));
   });
 
+  it("patches JSON bodies through the documented ApiResponse envelope", async () => {
+    const requests: Array<{ path: string; init: RequestInit | undefined }> = [];
+    const client = createDashboardApiClient({
+      fetchFn: async (path, init) => {
+        requests.push({ path: String(path), init });
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            data: {
+              accepted: true
+            }
+          }),
+          { status: 200 }
+        );
+      }
+    });
+
+    await expect(
+      client.patch<{ accepted: boolean }>("/api/matches/match_001/presentation", {
+        matchLabel: "Grand Final"
+      })
+    ).resolves.toEqual({ accepted: true });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.path).toBe("/api/matches/match_001/presentation");
+    expect(requests[0]?.init?.method).toBe("PATCH");
+    expect(requests[0]?.init?.body).toBe(JSON.stringify({ matchLabel: "Grand Final" }));
+  });
+
   it("throws a typed error for ApiResponse failures", async () => {
     const client = createDashboardApiClient({
       fetchFn: async () =>

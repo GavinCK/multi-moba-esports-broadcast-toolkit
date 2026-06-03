@@ -60,6 +60,7 @@ async function readResponseJson(response: Response): Promise<unknown> {
 export interface DashboardApiClient {
   get<TData>(path: string): Promise<TData>;
   post<TData>(path: string, body: Record<string, unknown>): Promise<TData>;
+  patch<TData>(path: string, body: Record<string, unknown>): Promise<TData>;
   getHealth(): Promise<DashboardHealthResponse>;
   getState(): Promise<DashboardRuntimeState>;
 }
@@ -107,6 +108,16 @@ export function createDashboardApiClient(
     post(path, body) {
       return request(path, {
         method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
+    },
+    patch(path, body) {
+      return request(path, {
+        method: "PATCH",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json"

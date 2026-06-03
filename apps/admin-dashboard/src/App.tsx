@@ -63,12 +63,12 @@ export function DashboardApp(): ReactNode {
   const apiClient = useMemo(() => createDashboardApiClient(), []);
   const { state, refresh } = useDashboardState({ apiClient });
 
-  return <DashboardView state={state} onRefresh={() => void refresh()} apiClient={apiClient} />;
+  return <DashboardView state={state} onRefresh={refresh} apiClient={apiClient} />;
 }
 
 export interface DashboardViewProps {
   state: DashboardClientState;
-  onRefresh(): void;
+  onRefresh(): void | Promise<void>;
   apiClient?: DashboardApiClient;
   initialSection?: AdminSectionId;
   initialSelectedMatchId?: string | null;
