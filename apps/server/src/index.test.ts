@@ -985,6 +985,320 @@ describe("server runtime foundation", () => {
     expect(stateText).not.toMatch(/file:\/\//i);
   });
 
+  it("patches match presentation metadata at runtime and preserves draft state", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-presentation-api-");
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        await runFullLoLDraft(baseUrl);
+
+        type DraftReadBody = {
+          data: {
+            draft: {
+              draft: {
+                status: string;
+                currentPhaseIndex: number;
+                timer: unknown;
+                actions: unknown[];
+                pickedHeroIds: string[];
+                bannedHeroIds: string[];
+                lockedHeroIds: string[];
+                finalLineup?: unknown;
+              };
+            };
+          };
+        };
+        type MatchReadBody = {
+          data: {
+            revision: number;
+            matches: Array<{
+              id: string;
+              presentation?: {
+                matchLabel?: string;
+                patchLabel?: string;
+                seriesFormat?: string;
+                gameNumber?: number;
+                scoreBySide?: {
+                  BLUE: number;
+                  RED: number;
+                };
+                firstPickSide?: string;
+                sideStatusLabel?: string;
+                playerDisplayOrderBySide?: {
+                  BLUE: string[];
+                  RED: string[];
+                };
+              };
+            }>;
+          };
+        };
+
+        const beforeDraft = await requestJson(baseUrl, `/api/drafts/${lolDraftId}`);
+        const beforeState = await requestJson(baseUrl, "/api/state");
+        const beforeDraftState = (beforeDraft.body as DraftReadBody).data.draft.draft;
+        const beforeMatch = (beforeState.body as MatchReadBody).data.matches.find((match) => match.id === lolMatchId);
+
+        expect(beforeDraft.status).toBe(200);
+        expect(beforeDraftState.finalLineup).toBeDefined();
+        expect(beforeMatch?.presentation).toMatchObject({
+          matchLabel: "LoL Sample Showmatch",
+          patchLabel: "Patch 25.10",
+          scoreBySide: {
+            BLUE: 0,
+            RED: 0
+          },
+          playerDisplayOrderBySide: {
+            BLUE: bluePlayerDisplayOrder,
+            RED: redPlayerDisplayOrder
+          }
+        });
+
+        const patch = await requestJson(baseUrl, `/api/matches/${lolMatchId}/presentation`, {
+          method: "PATCH",
+          body: {
+            operatorId: "producer-1",
+            matchLabel: "Grand Final",
+            patchLabel: "Patch 26.10",
+            seriesFormat: "BO5",
+            gameNumber: 2,
+            scoreBySide: {
+              BLUE: 1
+            },
+            firstPickSide: "RED",
+            sideStatusLabel: "Red side counterpick",
+            now: "2026-06-01T10:00:00.000Z"
+          }
+        });
+        const stateAfter = await requestJson(baseUrl, "/api/state");
+        const matchesAfter = await requestJson(baseUrl, "/api/matches");
+        const matchAfter = await requestJson(baseUrl, `/api/matches/${lolMatchId}`);
+        const afterDraft = await requestJson(baseUrl, `/api/drafts/${lolDraftId}`);
+        const afterDraftState = (afterDraft.body as DraftReadBody).data.draft.draft;
+
+        expect(patch.status).toBe(200);
+        expect(patch.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: expect.any(Number),
+            match: {
+              id: lolMatchId,
+              presentation: {
+                matchLabel: "Grand Final",
+                patchLabel: "Patch 26.10",
+                seriesFormat: "BO5",
+                gameNumber: 2,
+                scoreBySide: {
+                  BLUE: 1,
+                  RED: 0
+                },
+                firstPickSide: "RED",
+                sideStatusLabel: "Red side counterpick",
+                playerDisplayOrderBySide: {
+                  BLUE: bluePlayerDisplayOrder,
+                  RED: redPlayerDisplayOrder
+                }
+              }
+            }
+          }
+        });
+
+        const patchRevision = (patch.body as { data: { revision: number } }).data.revision;
+
+        expect(stateAfter.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: patchRevision,
+            matches: expect.arrayContaining([
+              expect.objectContaining({
+                id: lolMatchId,
+                presentation: expect.objectContaining({
+                  matchLabel: "Grand Final",
+                  patchLabel: "Patch 26.10",
+                  gameNumber: 2,
+                  scoreBySide: {
+                    BLUE: 1,
+                    RED: 0
+                  }
+                })
+              })
+            ])
+          }
+        });
+        expect(matchesAfter.body).toMatchObject({
+          ok: true,
+          data: {
+            matches: expect.arrayContaining([
+              expect.objectContaining({
+                id: lolMatchId,
+                presentation: expect.objectContaining({
+                  matchLabel: "Grand Final",
+                  patchLabel: "Patch 26.10"
+                })
+              })
+            ])
+          }
+        });
+        expect(matchAfter.body).toMatchObject({
+          ok: true,
+          data: {
+            id: lolMatchId,
+            presentation: expect.objectContaining({
+              matchLabel: "Grand Final",
+              patchLabel: "Patch 26.10"
+            })
+          }
+        });
+        expect(afterDraftState.status).toBe(beforeDraftState.status);
+        expect(afterDraftState.currentPhaseIndex).toBe(beforeDraftState.currentPhaseIndex);
+        expect(afterDraftState.timer).toEqual(beforeDraftState.timer);
+        expect(afterDraftState.actions).toEqual(beforeDraftState.actions);
+        expect(afterDraftState.pickedHeroIds).toEqual(beforeDraftState.pickedHeroIds);
+        expect(afterDraftState.bannedHeroIds).toEqual(beforeDraftState.bannedHeroIds);
+        expect(afterDraftState.lockedHeroIds).toEqual(beforeDraftState.lockedHeroIds);
+        expect(afterDraftState.finalLineup).toEqual(beforeDraftState.finalLineup);
+
+        const entries = readAuditLogEntries(tempPackagePath);
+        const lastEntry = entries[entries.length - 1] as {
+          event: string;
+          matchId: string;
+          previousRevision: number;
+          nextRevision: number;
+        };
+
+        expect(lastEntry).toMatchObject({
+          event: "MATCH_PRESENTATION_UPDATED",
+          matchId: lolMatchId,
+          nextRevision: patchRevision
+        });
+        expect(lastEntry.previousRevision).toBe(patchRevision - 1);
+        expect(JSON.stringify(lastEntry)).not.toMatch(/apiKey|secret|hiddenCompetitiveInformation/i);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects invalid presentation metadata patches without mutating state", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-presentation-invalid-");
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const invalidBody = await requestJson(baseUrl, `/api/matches/${lolMatchId}/presentation`, {
+          method: "PATCH",
+          body: []
+        });
+        const missingMatch = await requestJson(baseUrl, "/api/matches/match_missing/presentation", {
+          method: "PATCH",
+          body: {
+            matchLabel: "Grand Final"
+          }
+        });
+        const unknownField = await requestJson(baseUrl, `/api/matches/${lolMatchId}/presentation`, {
+          method: "PATCH",
+          body: {
+            displayName: "Grand Final"
+          }
+        });
+        const invalidSeries = await requestJson(baseUrl, `/api/matches/${lolMatchId}/presentation`, {
+          method: "PATCH",
+          body: {
+            seriesFormat: "BO7"
+          }
+        });
+        const invalidGameNumber = await requestJson(baseUrl, `/api/matches/${lolMatchId}/presentation`, {
+          method: "PATCH",
+          body: {
+            gameNumber: 0
+          }
+        });
+        const invalidScore = await requestJson(baseUrl, `/api/matches/${lolMatchId}/presentation`, {
+          method: "PATCH",
+          body: {
+            scoreBySide: {
+              BLUE: -1,
+              RED: 1.5
+            }
+          }
+        });
+        const invalidFirstPickSide = await requestJson(baseUrl, `/api/matches/${lolMatchId}/presentation`, {
+          method: "PATCH",
+          body: {
+            firstPickSide: "LEFT"
+          }
+        });
+        const emptyString = await requestJson(baseUrl, `/api/matches/${lolMatchId}/presentation`, {
+          method: "PATCH",
+          body: {
+            sideStatusLabel: " "
+          }
+        });
+        const stateAfterRejected = await requestJson(baseUrl, "/api/state");
+        const matchesAfterRejected = await requestJson(baseUrl, "/api/matches");
+
+        expect(invalidBody.status).toBe(400);
+        expect(missingMatch.status).toBe(404);
+        expect(missingMatch.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "MATCH_NOT_FOUND"
+          }
+        });
+
+        for (const response of [
+          invalidBody,
+          unknownField,
+          invalidSeries,
+          invalidGameNumber,
+          invalidScore,
+          invalidFirstPickSide,
+          emptyString
+        ]) {
+          expect(response.status).toBe(400);
+          expect(response.body).toMatchObject({
+            ok: false,
+            error: {
+              code: "MATCH_PRESENTATION_INVALID_PAYLOAD"
+            }
+          });
+        }
+
+        expect(stateAfterRejected.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 1,
+            matches: expect.arrayContaining([
+              expect.objectContaining({
+                id: lolMatchId,
+                presentation: expect.objectContaining({
+                  matchLabel: "LoL Sample Showmatch",
+                  patchLabel: "Patch 25.10",
+                  firstPickSide: "BLUE"
+                })
+              })
+            ])
+          }
+        });
+        expect(matchesAfterRejected.body).toMatchObject({
+          ok: true,
+          data: {
+            matches: expect.arrayContaining([
+              expect.objectContaining({
+                id: lolMatchId,
+                presentation: expect.objectContaining({
+                  matchLabel: "LoL Sample Showmatch",
+                  patchLabel: "Patch 25.10"
+                })
+              })
+            ])
+          }
+        });
+        expect(readAuditLogEntries(tempPackagePath)).toHaveLength(0);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
   it("returns known draft summaries and safe draft snapshots", async () => {
     const drafts = await fetchJson("/api/drafts");
     const filteredDrafts = await fetchJson(`/api/drafts?matchId=${genericMatchId}`);
@@ -2643,6 +2957,89 @@ describe("server runtime foundation", () => {
 
             expect(state.status).toBe(200);
           });
+        } finally {
+          socket.disconnect();
+        }
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("broadcasts match presentation REST patches through the existing state socket mechanism", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-socket-presentation-");
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const { socket } = await connectAndReceiveFullState(baseUrl, {
+          role: "PRODUCER",
+          panel: "producer",
+          route: "/producer"
+        });
+
+        try {
+          const statePatchPromise = waitForSocketEvent<unknown>(
+            socket,
+            "state:patch",
+            (payload) => JSON.stringify(payload).includes("MATCH_PRESENTATION_UPDATED")
+          );
+          const logEntryPromise = waitForSocketEvent<unknown>(
+            socket,
+            "log:entry",
+            (payload) => JSON.stringify(payload).includes("MATCH_PRESENTATION_UPDATED")
+          );
+          const healthUpdatePromise = waitForSocketEvent<unknown>(
+            socket,
+            "health:update",
+            (payload) => JSON.stringify(payload).includes("\"revision\":2")
+          );
+          const draftUpdatedPromise = waitForSocketEvent<unknown>(
+            socket,
+            "draft:updated",
+            () => true,
+            300
+          )
+            .then(() => true)
+            .catch(() => false);
+
+          const patch = await requestJson(baseUrl, `/api/matches/${lolMatchId}/presentation`, {
+            method: "PATCH",
+            body: {
+              operatorId: "producer-1",
+              matchLabel: "Grand Final",
+              gameNumber: 2,
+              scoreBySide: {
+                BLUE: 1,
+                RED: 0
+              },
+              now: "2026-06-01T11:00:00.000Z"
+            }
+          });
+
+          expect(patch.status).toBe(200);
+
+          const statePatch = await statePatchPromise;
+          const logEntry = await logEntryPromise;
+          const healthUpdate = await healthUpdatePromise;
+
+          expectSocketEnvelope(statePatch, "state:patch");
+          expect(statePatch.payload).toMatchObject({
+            revision: 2,
+            previousRevision: 1,
+            reason: "MATCH_PRESENTATION_UPDATED",
+            entityId: lolMatchId,
+            changed: ["matches", `matches.${lolMatchId}.presentation`]
+          });
+          expectSocketEnvelope(logEntry, "log:entry");
+          expect(logEntry.payload).toMatchObject({
+            entry: expect.objectContaining({
+              event: "MATCH_PRESENTATION_UPDATED",
+              matchId: lolMatchId,
+              nextRevision: 2
+            })
+          });
+          expectSocketEnvelope(healthUpdate, "health:update");
+          expect(await draftUpdatedPromise).toBe(false);
         } finally {
           socket.disconnect();
         }

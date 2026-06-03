@@ -18,6 +18,7 @@ import {
   type DraftEngineError,
   type DraftEngineResult
 } from "@mmbt/core-draft";
+import { createMatchPresentationDefaults, isSeriesFormat } from "@mmbt/core-match";
 import {
   clearEmergency,
   clearGraphic,
@@ -32,7 +33,14 @@ import {
   type ProductionEngineResult,
   type ProductionRuntimeState
 } from "@mmbt/core-production";
-import type { DraftLineupSide, DraftState, JsonObject, JsonValue } from "@mmbt/shared-types";
+import type {
+  DraftLineupSide,
+  DraftState,
+  JsonObject,
+  JsonValue,
+  MatchPresentationMetadata,
+  PresentationSide
+} from "@mmbt/shared-types";
 
 import {
   appendAuditLogEntry,
@@ -85,6 +93,21 @@ const UNSAFE_PRODUCTION_PAYLOAD_KEY_PATTERN = new RegExp(
   "i"
 );
 const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
+const PRESENTATION_UPDATE_FIELDS = [
+  "matchLabel",
+  "patchLabel",
+  "seriesFormat",
+  "gameNumber",
+  "scoreBySide",
+  "firstPickSide",
+  "sideStatusLabel"
+] as const;
+const PRESENTATION_REQUEST_METADATA_FIELDS = ["operatorId", "now"] as const;
+const PRESENTATION_STRING_MAX_LENGTH = {
+  matchLabel: 120,
+  patchLabel: 80,
+  sideStatusLabel: 80
+} as const satisfies Record<"matchLabel" | "patchLabel" | "sideStatusLabel", number>;
 const ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".avif": "image/avif",
   ".gif": "image/gif",
@@ -721,6 +744,321 @@ function broadcastProductionMutation(
   );
 
   broadcastStatePatch(runtimeState, realtime, auditEntry, ["production"], runtimeState.production.id);
+  broadcastLogEntry(realtime, auditEntry);
+  realtime.broadcastHealthUpdate();
+}
+
+type PresentationUpdateField = (typeof PRESENTATION_UPDATE_FIELDS)[number];
+
+interface PresentationMetadataPatch {
+  matchLabel?: string;
+  patchLabel?: string;
+  seriesFormat?: MatchPresentationMetadata["seriesFormat"];
+  gameNumber?: number;
+  scoreBySide?: Partial<NonNullable<MatchPresentationMetadata["scoreBySide"]>>;
+  firstPickSide?: PresentationSide;
+  sideStatusLabel?: string;
+}
+
+interface PresentationMetadataPatchResult {
+  patch: PresentationMetadataPatch;
+  changedFields: PresentationUpdateField[];
+}
+
+function isPresentationUpdateField(field: string): field is PresentationUpdateField {
+  return (PRESENTATION_UPDATE_FIELDS as readonly string[]).includes(field);
+}
+
+function isPresentationRequestMetadataField(field: string): boolean {
+  return (PRESENTATION_REQUEST_METADATA_FIELDS as readonly string[]).includes(field);
+}
+
+function createPresentationPayloadError(message: string, details?: unknown): AppError {
+  return {
+    code: "MATCH_PRESENTATION_INVALID_PAYLOAD",
+    message,
+    httpStatus: 400,
+    details
+  };
+}
+
+function hasUnsafeControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+
+    if (codePoint !== undefined && ((codePoint < 32 && codePoint !== 32) || codePoint === 127)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function readPresentationStringField(
+  body: Record<string, unknown>,
+  field: "matchLabel" | "patchLabel" | "sideStatusLabel"
+): string | undefined | AppError {
+  if (!hasOwnProperty(body, field)) {
+    return undefined;
+  }
+
+  const value = body[field];
+
+  if (typeof value !== "string") {
+    return createPresentationPayloadError(`Presentation field ${field} must be a non-empty string when provided.`, {
+      field
+    });
+  }
+
+  const normalized = value.replace(/[\r\n\t]+/g, " ").trim();
+
+  if (normalized.length === 0) {
+    return createPresentationPayloadError(`Presentation field ${field} must not be empty.`, { field });
+  }
+
+  if (normalized.length > PRESENTATION_STRING_MAX_LENGTH[field]) {
+    return createPresentationPayloadError(
+      `Presentation field ${field} must be ${PRESENTATION_STRING_MAX_LENGTH[field]} characters or fewer.`,
+      { field, maxLength: PRESENTATION_STRING_MAX_LENGTH[field] }
+    );
+  }
+
+  if (hasUnsafeControlCharacter(normalized) || URL_SCHEME_PATTERN.test(normalized)) {
+    return createPresentationPayloadError(`Presentation field ${field} contains unsafe text.`, { field });
+  }
+
+  return normalized;
+}
+
+function readPresentationGameNumber(body: Record<string, unknown>): number | undefined | AppError {
+  if (!hasOwnProperty(body, "gameNumber")) {
+    return undefined;
+  }
+
+  if (!Number.isInteger(body.gameNumber) || (body.gameNumber as number) < 1) {
+    return createPresentationPayloadError("Presentation field gameNumber must be a positive integer when provided.", {
+      field: "gameNumber"
+    });
+  }
+
+  return body.gameNumber as number;
+}
+
+function readPresentationScoreBySide(
+  body: Record<string, unknown>
+): Partial<NonNullable<MatchPresentationMetadata["scoreBySide"]>> | undefined | AppError {
+  if (!hasOwnProperty(body, "scoreBySide")) {
+    return undefined;
+  }
+
+  const value = body.scoreBySide;
+
+  if (!isRecord(value)) {
+    return createPresentationPayloadError(
+      "Presentation field scoreBySide must be an object with BLUE and/or RED scores.",
+      { field: "scoreBySide" }
+    );
+  }
+
+  const unknownFields = Object.keys(value).filter((field) => field !== "BLUE" && field !== "RED");
+
+  if (unknownFields.length > 0) {
+    return createPresentationPayloadError("Presentation field scoreBySide contains unsupported fields.", {
+      field: "scoreBySide",
+      unknownFields
+    });
+  }
+
+  if (!hasOwnProperty(value, "BLUE") && !hasOwnProperty(value, "RED")) {
+    return createPresentationPayloadError("Presentation field scoreBySide must include BLUE or RED when provided.", {
+      field: "scoreBySide"
+    });
+  }
+
+  const scorePatch: Partial<NonNullable<MatchPresentationMetadata["scoreBySide"]>> = {};
+
+  for (const side of ["BLUE", "RED"] as const) {
+    if (!hasOwnProperty(value, side)) {
+      continue;
+    }
+
+    const score = value[side];
+
+    if (!Number.isInteger(score) || (score as number) < 0) {
+      return createPresentationPayloadError(
+        `Presentation field scoreBySide.${side} must be a non-negative integer when provided.`,
+        { field: `scoreBySide.${side}` }
+      );
+    }
+
+    scorePatch[side] = score as number;
+  }
+
+  return scorePatch;
+}
+
+function readPresentationFirstPickSide(body: Record<string, unknown>): PresentationSide | undefined | AppError {
+  if (!hasOwnProperty(body, "firstPickSide")) {
+    return undefined;
+  }
+
+  if (body.firstPickSide !== "BLUE" && body.firstPickSide !== "RED") {
+    return createPresentationPayloadError("Presentation field firstPickSide must be BLUE or RED when provided.", {
+      field: "firstPickSide"
+    });
+  }
+
+  return body.firstPickSide;
+}
+
+function readPresentationPatch(body: Record<string, unknown>): PresentationMetadataPatchResult | AppError {
+  const unknownFields = Object.keys(body).filter(
+    (field) => !isPresentationUpdateField(field) && !isPresentationRequestMetadataField(field)
+  );
+
+  if (unknownFields.length > 0) {
+    return createPresentationPayloadError("Presentation update payload contains unsupported fields.", {
+      unknownFields
+    });
+  }
+
+  const changedFields = PRESENTATION_UPDATE_FIELDS.filter((field) => hasOwnProperty(body, field));
+
+  if (changedFields.length === 0) {
+    return createPresentationPayloadError("Presentation update payload must include at least one metadata field.", {
+      allowedFields: PRESENTATION_UPDATE_FIELDS
+    });
+  }
+
+  const matchLabel = readPresentationStringField(body, "matchLabel");
+  const patchLabel = readPresentationStringField(body, "patchLabel");
+  const sideStatusLabel = readPresentationStringField(body, "sideStatusLabel");
+  const gameNumber = readPresentationGameNumber(body);
+  const scoreBySide = readPresentationScoreBySide(body);
+  const firstPickSide = readPresentationFirstPickSide(body);
+
+  for (const value of [matchLabel, patchLabel, sideStatusLabel, gameNumber, scoreBySide, firstPickSide]) {
+    if (isAppError(value)) {
+      return value;
+    }
+  }
+
+  const patch: PresentationMetadataPatch = {};
+
+  if (matchLabel !== undefined) {
+    patch.matchLabel = matchLabel as string;
+  }
+
+  if (patchLabel !== undefined) {
+    patch.patchLabel = patchLabel as string;
+  }
+
+  if (sideStatusLabel !== undefined) {
+    patch.sideStatusLabel = sideStatusLabel as string;
+  }
+
+  if (hasOwnProperty(body, "seriesFormat")) {
+    if (!isSeriesFormat(body.seriesFormat)) {
+      return createPresentationPayloadError("Presentation field seriesFormat must be BO1, BO3, or BO5 when provided.", {
+        field: "seriesFormat"
+      });
+    }
+
+    patch.seriesFormat = body.seriesFormat;
+  }
+
+  if (gameNumber !== undefined) {
+    patch.gameNumber = gameNumber as number;
+  }
+
+  if (scoreBySide !== undefined) {
+    patch.scoreBySide = scoreBySide as Partial<NonNullable<MatchPresentationMetadata["scoreBySide"]>>;
+  }
+
+  if (firstPickSide !== undefined) {
+    patch.firstPickSide = firstPickSide as PresentationSide;
+  }
+
+  return { patch, changedFields };
+}
+
+function mergeMatchPresentationPatch(
+  match: LoadedEventPackage["matches"][number],
+  patch: PresentationMetadataPatch
+): MatchPresentationMetadata {
+  const basePresentation = createMatchPresentationDefaults(match);
+
+  return {
+    ...basePresentation,
+    ...patch,
+    scoreBySide: patch.scoreBySide
+      ? {
+          ...(basePresentation.scoreBySide ?? {
+            BLUE: match.score.blue,
+            RED: match.score.red
+          }),
+          ...patch.scoreBySide
+        }
+      : basePresentation.scoreBySide
+  };
+}
+
+function commitMatchPresentationMutation(
+  runtimeState: ServerRuntimeState,
+  loadedPackage: LoadedEventPackage,
+  matchIndex: number,
+  nextMatch: LoadedEventPackage["matches"][number],
+  audit: {
+    operatorId: string;
+    timestamp: string;
+    changedFields: readonly PresentationUpdateField[];
+  }
+): CommitResult<LoadedEventPackage["matches"][number]> | AppError {
+  const previousRevision = runtimeState.revision;
+  const nextRevision = previousRevision + 1;
+  const auditEntry: AuditLogEntry = {
+    id: createAuditLogEntryId(audit.timestamp, nextRevision, "MATCH_PRESENTATION_UPDATED"),
+    timestamp: audit.timestamp,
+    event: "MATCH_PRESENTATION_UPDATED",
+    eventType: "MATCH_PRESENTATION_UPDATED",
+    eventPackageId: loadedPackage.packageId,
+    eventId: loadedPackage.event.id,
+    matchId: nextMatch.id,
+    operatorId: audit.operatorId,
+    previousRevision,
+    nextRevision,
+    result: toAuditMetadata({
+      matchId: nextMatch.id,
+      changedFields: audit.changedFields,
+      presentation: nextMatch.presentation
+    }),
+    metadata: toAuditMetadata({
+      changedFields: audit.changedFields
+    })
+  };
+  const auditResult = appendAuditLogEntry(runtimeState.auditLog, auditEntry);
+
+  if (!auditResult.ok) {
+    return auditResult.error;
+  }
+
+  loadedPackage.matches[matchIndex] = nextMatch;
+  runtimeState.revision = nextRevision;
+  runtimeState.lastStateUpdateAt = audit.timestamp;
+
+  return {
+    value: nextMatch,
+    auditEntry
+  };
+}
+
+function broadcastMatchPresentationMutation(
+  runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
+  match: LoadedEventPackage["matches"][number],
+  auditEntry: AuditLogEntry
+): void {
+  broadcastStatePatch(runtimeState, realtime, auditEntry, ["matches", `matches.${match.id}.presentation`], match.id);
   broadcastLogEntry(realtime, auditEntry);
   realtime.broadcastHealthUpdate();
 }
@@ -1595,6 +1933,74 @@ async function handleDraftPost(
   notFound(response);
 }
 
+async function handleMatchPresentationPatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  runtimeState: ServerRuntimeState,
+  realtime: RealtimeBroadcaster,
+  pathParts: string[]
+): Promise<void> {
+  const loadedPackage = getLoadedEventPackage(runtimeState);
+
+  if (!loadedPackage) {
+    eventPackageNotLoaded(response, runtimeState);
+    return;
+  }
+
+  const matchId = pathParts[2];
+  const matchIndex = loadedPackage.matches.findIndex((match) => match.id === matchId);
+
+  if (matchIndex < 0) {
+    unknownEntity(response, "MATCH_NOT_FOUND", "Match ID was not found in the loaded event package.", { matchId });
+    return;
+  }
+
+  const body = await readJsonBody(request);
+
+  if (!isRecord(body)) {
+    sendError(
+      response,
+      createPresentationPayloadError("Presentation update payload must be a JSON object.")
+    );
+    return;
+  }
+
+  const patchResult = readPresentationPatch(body);
+
+  if (isAppError(patchResult)) {
+    sendError(response, patchResult);
+    return;
+  }
+
+  const operatorId = sanitizeOperatorId(body.operatorId);
+  const timestamp = getMutationTimestamp(body);
+  const currentMatch = loadedPackage.matches[matchIndex];
+  const nextMatch: LoadedEventPackage["matches"][number] = {
+    ...currentMatch,
+    presentation: mergeMatchPresentationPatch(currentMatch, patchResult.patch)
+  };
+  const commitResult = commitMatchPresentationMutation(runtimeState, loadedPackage, matchIndex, nextMatch, {
+    operatorId,
+    timestamp,
+    changedFields: patchResult.changedFields
+  });
+
+  if ("code" in commitResult) {
+    sendError(response, commitResult);
+    return;
+  }
+
+  sendJson(
+    response,
+    200,
+    apiSuccess({
+      revision: runtimeState.revision,
+      match: commitResult.value
+    })
+  );
+  broadcastMatchPresentationMutation(runtimeState, realtime, commitResult.value, commitResult.auditEntry);
+}
+
 function handleDraftGet(
   response: ServerResponse,
   runtimeState: ServerRuntimeState,
@@ -2099,6 +2505,22 @@ export async function handleApiRequest(
     }
 
     await handleProductionPost(request, response, runtimeState, realtime, pathParts);
+    return;
+  }
+
+  if (
+    request.method === "PATCH" &&
+    pathParts[0] === "api" &&
+    pathParts[1] === "matches" &&
+    pathParts[3] === "presentation" &&
+    pathParts.length === 4
+  ) {
+    if (!runtimeState.eventPackageLoadResult.ok) {
+      eventPackageNotLoaded(response, runtimeState);
+      return;
+    }
+
+    await handleMatchPresentationPatch(request, response, runtimeState, realtime, pathParts);
     return;
   }
 
