@@ -12,6 +12,7 @@ import type {
   GraphicType,
   JsonValue,
   Match,
+  Player,
   ProductionState,
   Sponsor,
   SystemHealth,
@@ -147,6 +148,7 @@ export interface OverlayRuntimeState {
   event?: EventInfo;
   matches: OverlayMatch[];
   teams: Team[];
+  players: Player[];
   sponsors: Sponsor[];
   games: OverlayGame[];
   rulesets: DraftRuleset[];

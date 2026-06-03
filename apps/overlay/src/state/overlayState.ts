@@ -75,9 +75,13 @@ function applySnapshot(
   snapshot: OverlayRuntimeState,
   health: OverlayHealthResponse = snapshot.health
 ): OverlayClientState {
+  const normalizedSnapshot: OverlayRuntimeState = {
+    ...snapshot,
+    players: Array.isArray(snapshot.players) ? snapshot.players : []
+  };
   const previousDrafts = state.snapshot?.drafts ?? {};
   const drafts = Object.fromEntries(
-    Object.entries(snapshot.drafts).map(([draftId, draft]) => {
+    Object.entries(normalizedSnapshot.drafts).map(([draftId, draft]) => {
       const previousDraft = previousDrafts[draftId];
 
       return [
@@ -95,7 +99,7 @@ function applySnapshot(
   return {
     ...state,
     snapshot: {
-      ...snapshot,
+      ...normalizedSnapshot,
       drafts
     },
     health,

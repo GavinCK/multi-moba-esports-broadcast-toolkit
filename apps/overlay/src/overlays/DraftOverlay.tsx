@@ -18,6 +18,12 @@ import type {
   OverlayRuntimeState
 } from "../client/types";
 import {
+  selectMatchPresentationViewModel,
+  toBrowserLocalAssetPath,
+  type OverlayMatchPresentationViewModel,
+  type OverlayPresentationPlayerViewModel
+} from "../state/presentationViewModel";
+import {
   formatDraftTimer,
   useDraftTimerDisplay,
   type DraftTimerDisplayState
@@ -34,6 +40,9 @@ interface DraftOverlaySlot {
   statusLabel: string;
   isActive: boolean;
   isManualOverride: boolean;
+  player: OverlayPresentationPlayerViewModel | null;
+  playerLabel: string | null;
+  playerRole: string | null;
 }
 
 export interface DraftOverlayViewModel {
@@ -57,6 +66,7 @@ export interface DraftOverlayViewModel {
   draftStatusLabel: string;
   sponsor: Sponsor | null;
   theme: ThemeConfig | null;
+  presentation: OverlayMatchPresentationViewModel | null;
   warnings: string[];
 }
 
@@ -126,30 +136,6 @@ function getTeamInitials(team: Team | null, fallback: string): string {
     .toUpperCase();
 
   return initials || fallback;
-}
-
-function isSafeLocalAssetPath(value: string | undefined): value is string {
-  if (!value) {
-    return false;
-  }
-
-  const trimmed = value.trim();
-
-  return (
-    trimmed.length > 0 &&
-    !/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) &&
-    !trimmed.startsWith("//") &&
-    !trimmed.includes("\\") &&
-    !trimmed.includes("..")
-  );
-}
-
-function toBrowserLocalAssetPath(value: string | undefined): string | null {
-  if (!isSafeLocalAssetPath(value)) {
-    return null;
-  }
-
-  return value.startsWith("/") ? value : `/${value}`;
 }
 
 function resolveHeroIcon(hero: Hero | null): string | null {
@@ -387,7 +373,10 @@ function buildSlots(
       sublabel: getSlotSublabel(action),
       statusLabel: getSlotStatusLabel(action),
       isActive: draft.currentActionIds.includes(action.id),
-      isManualOverride: isManualOverrideAction(action)
+      isManualOverride: isManualOverrideAction(action),
+      player: null,
+      playerLabel: null,
+      playerRole: null
     };
   });
 }
@@ -453,6 +442,22 @@ function resolvePickSlotsForSide(
   }
 
   return orderedSlots as DraftOverlaySlot[];
+}
+
+function attachPlayersToPickSlots(
+  slots: DraftOverlaySlot[],
+  players: OverlayPresentationPlayerViewModel[]
+): DraftOverlaySlot[] {
+  return slots.map((slot, index) => {
+    const player = players[index] ?? null;
+
+    return {
+      ...slot,
+      player,
+      playerLabel: player?.label ?? null,
+      playerRole: player?.role ?? null
+    };
+  });
 }
 
 function getPhaseLabel(draft: OverlayDraftSummary | null, ruleset: DraftRuleset | null): string {
@@ -524,6 +529,7 @@ export function selectDraftOverlayViewModel(
       draftStatusLabel: "Standby",
       sponsor: null,
       theme: null,
+      presentation: null,
       warnings: ["No runtime state snapshot has been received."]
     };
   }
@@ -552,6 +558,7 @@ export function selectDraftOverlayViewModel(
       draftStatusLabel: "Standby",
       sponsor: null,
       theme: null,
+      presentation: null,
       warnings: ["The requested match ID was not found in public runtime state."]
     };
   }
@@ -563,6 +570,7 @@ export function selectDraftOverlayViewModel(
   const redTeam = findTeam(snapshot, game?.redTeamId ?? match.teams.red);
   const theme = findTheme(snapshot, match, game);
   const sponsor = findSponsor(snapshot, match);
+  const presentation = selectMatchPresentationViewModel(snapshot, match);
   const warnings: string[] = [];
 
   if (!game) {
@@ -579,8 +587,18 @@ export function selectDraftOverlayViewModel(
 
   const slots = draft ? buildSlots(snapshot, draft, ruleset) : [];
   const activeSide = getActiveSide(draft, ruleset);
-  const bluePicks = draft ? resolvePickSlotsForSide(slots, draft, "BLUE") : [];
-  const redPicks = draft ? resolvePickSlotsForSide(slots, draft, "RED") : [];
+  const bluePicks = draft
+    ? attachPlayersToPickSlots(
+        resolvePickSlotsForSide(slots, draft, "BLUE"),
+        presentation.teams.BLUE.players
+      )
+    : [];
+  const redPicks = draft
+    ? attachPlayersToPickSlots(
+        resolvePickSlotsForSide(slots, draft, "RED"),
+        presentation.teams.RED.players
+      )
+    : [];
 
   return {
     state: draft ? "ready" : "missing-draft",
@@ -603,6 +621,7 @@ export function selectDraftOverlayViewModel(
     draftStatusLabel: draft ? formatStatus(draft.status) : "Draft Standby",
     sponsor,
     theme,
+    presentation,
     warnings
   };
 }
@@ -728,6 +747,16 @@ function Standby({
 }
 
 function DraftDiagnostics({ viewModel }: { viewModel: DraftOverlayViewModel }) {
+  const presentation = viewModel.presentation;
+  const formatPlayerOrder = (players: OverlayPresentationPlayerViewModel[]) =>
+    players.length > 0
+      ? players
+          .map((player, index) =>
+            `${index + 1}. ${player.label}${player.role ? ` (${player.role})` : ""}${player.unresolved ? " [unresolved]" : ""}`
+          )
+          .join(", ")
+      : "none";
+
   return (
     <aside className="draft-diagnostics" aria-label="Draft overlay diagnostics">
       <strong>Draft Diagnostics</strong>
@@ -747,6 +776,54 @@ function DraftDiagnostics({ viewModel }: { viewModel: DraftOverlayViewModel }) {
         <div>
           <dt>Warnings</dt>
           <dd>{viewModel.warnings.length > 0 ? viewModel.warnings.join("; ") : "none"}</dd>
+        </div>
+        <div>
+          <dt>Presentation</dt>
+          <dd>{presentation?.matchLabel ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Patch</dt>
+          <dd>{presentation?.patchLabel ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Series</dt>
+          <dd>
+            {presentation
+              ? `${presentation.seriesFormat} Game ${presentation.gameNumber}`
+              : "none"}
+          </dd>
+        </div>
+        <div>
+          <dt>Score</dt>
+          <dd>
+            {presentation
+              ? `${presentation.scoreBySide.BLUE}-${presentation.scoreBySide.RED}`
+              : "none"}
+          </dd>
+        </div>
+        <div>
+          <dt>First pick</dt>
+          <dd>{presentation?.firstPickSide ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Side status</dt>
+          <dd>{presentation?.sideStatusLabel ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Blue team</dt>
+          <dd>{presentation?.teams.BLUE.shortName ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Red team</dt>
+          <dd>{presentation?.teams.RED.shortName ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Blue players</dt>
+          <dd>{presentation ? formatPlayerOrder(presentation.teams.BLUE.players) : "none"}</dd>
+        </div>
+        <div>
+          <dt>Red players</dt>
+          <dd>{presentation ? formatPlayerOrder(presentation.teams.RED.players) : "none"}</dd>
         </div>
       </dl>
     </aside>
