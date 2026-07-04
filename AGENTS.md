@@ -1,5 +1,16 @@
 # AGENTS.md
 
+> ## ⚠ v0.2 Operating Update (2026-07-05)
+>
+> Current mission is a narrowed **LoL-first MVP** (see `docs/PROJECT_STATE.md`). Before anything else:
+>
+> 1. Read `CLAUDE.md` (roles, hard guardrails, workflow rules).
+> 2. Read `docs/PROJECT_STATE.md` (current baseline, tracks, task queue).
+> 3. Decision records in `docs/decisions/ADR-*.md` override any conflicting older guidance in this file. In particular: ADR-003 (double-pick shared timer is correct — do not "fix"), ADR-005 (overlay visuals are design-first; freeform visual prompts are banned).
+> 4. Implementation tasks are specified per-task in `docs/tasks/T-*.md`; `IMPLEMENTATION_PROMPT_FOR_CODEX.md` is archived under `docs/handoffs/archive/` (historical reference only).
+>
+> Everything below remains valid for guardrails, conventions, and architecture principles.
+
 ## Purpose
 
 This file is the root instruction document for AI coding agents working on the **Multi-MOBA Esports Broadcast Toolkit v0.1**.
