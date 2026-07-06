@@ -11,7 +11,7 @@ export interface StartServerOptions {
   port?: number;
   repositoryRoot?: string;
   now?: string;
-  logger?: Pick<Console, "error" | "log">;
+  logger?: Pick<Console, "error" | "log" | "warn">;
 }
 
 export interface StartedServer {
@@ -30,7 +30,8 @@ export async function createServerApp(options: StartServerOptions = {}): Promise
   const runtimeState = await createServerRuntimeState({
     eventPackagePath: options.eventPackagePath,
     repositoryRoot: options.repositoryRoot,
-    now: options.now
+    now: options.now,
+    logger: options.logger
   });
   const realtime = createSocketRealtimeController(runtimeState);
   const server = createHttpServer(runtimeState, realtime);

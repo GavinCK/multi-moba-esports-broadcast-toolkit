@@ -77,6 +77,7 @@ import {
   type StatePatchPayload
 } from "./realtime.js";
 import { apiError, apiSuccess, type AppError } from "./result.js";
+import { scheduleRuntimeStateSnapshot } from "./state-snapshot.js";
 
 const DEFAULT_OPERATOR_ID = "local-operator";
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -1045,6 +1046,7 @@ function commitMatchPresentationMutation(
   loadedPackage.matches[matchIndex] = nextMatch;
   runtimeState.revision = nextRevision;
   runtimeState.lastStateUpdateAt = audit.timestamp;
+  scheduleRuntimeStateSnapshot(runtimeState);
 
   return {
     value: nextMatch,
@@ -1107,6 +1109,7 @@ function commitDraftMutation(
   runtimeState.drafts.drafts[entry.draft.id] = nextEntry;
   runtimeState.revision = nextRevision;
   runtimeState.lastStateUpdateAt = audit.timestamp;
+  scheduleRuntimeStateSnapshot(runtimeState);
 
   return {
     value: nextEntry,
@@ -1150,6 +1153,7 @@ function commitDraftCreation(
   runtimeState.drafts.drafts[entry.draft.id] = entry;
   runtimeState.revision = nextRevision;
   runtimeState.lastStateUpdateAt = audit.timestamp;
+  scheduleRuntimeStateSnapshot(runtimeState);
 
   return {
     value: entry,
@@ -1205,6 +1209,7 @@ function commitProductionMutation(
   runtimeState.production = nextProduction;
   runtimeState.revision = nextRevision;
   runtimeState.lastStateUpdateAt = audit.timestamp;
+  scheduleRuntimeStateSnapshot(runtimeState);
 
   return {
     value: nextProduction,

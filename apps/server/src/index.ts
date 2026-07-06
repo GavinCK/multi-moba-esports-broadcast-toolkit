@@ -12,6 +12,7 @@ export * from "./realtime.js";
 export * from "./result.js";
 export * from "./runtime-state.js";
 export * from "./server.js";
+export * from "./state-snapshot.js";
 export * from "./socket.js";
 
 import { startServer } from "./server.js";

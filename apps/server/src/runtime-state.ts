@@ -32,6 +32,11 @@ import {
   type DraftSummary
 } from "./draft-runtime.js";
 import { createProductionSnapshot, type PublicProductionState } from "./production-runtime.js";
+import {
+  createRuntimeSnapshotState,
+  restoreRuntimeStateFromSnapshot,
+  type RuntimeSnapshotState
+} from "./state-snapshot.js";
 
 export interface ServerRuntimeState {
   serverStartedAt: string;
@@ -44,6 +49,7 @@ export interface ServerRuntimeState {
   drafts: DraftRuntimeState;
   production: ProductionRuntimeState;
   auditLog: AuditLogRuntimeState;
+  snapshot: RuntimeSnapshotState;
   socketClients: RuntimeSocketClientInfo[];
   revision: number;
   lastStateUpdateAt: string;
@@ -66,6 +72,7 @@ export interface ServerHealthResponse extends SystemHealth {
   now: string;
   uptimeSeconds: number;
   eventPackagePath: string;
+  restoredFromSnapshot: boolean;
   validationWarnings: {
     eventPackage: LoadedEventPackage["validation"]["warnings"];
     adapters: AdapterValidationWarning[];
@@ -76,6 +83,7 @@ export interface CreateServerRuntimeStateOptions {
   eventPackagePath?: string;
   repositoryRoot?: string;
   now?: string;
+  logger?: Pick<Console, "warn">;
 }
 
 function resolveEventPackageRoot(eventPackagePath: string, repositoryRoot: string): string {
@@ -144,7 +152,7 @@ export async function createServerRuntimeState(
     (game) => game.matchId === activeMatchId && game.gameNumber === 1
   );
 
-  return {
+  const runtimeState: ServerRuntimeState = {
     serverStartedAt: now,
     repositoryRoot,
     eventPackagePath: toDisplayPath(eventPackageRoot, repositoryRoot),
@@ -165,10 +173,18 @@ export async function createServerRuntimeState(
       repositoryRoot,
       loadedPackage
     }),
+    snapshot: createRuntimeSnapshotState(eventPackageRoot),
     socketClients: [],
     revision: 1,
     lastStateUpdateAt: now
   };
+
+  restoreRuntimeStateFromSnapshot(runtimeState, {
+    now,
+    logger: options.logger
+  });
+
+  return runtimeState;
 }
 
 function isKnownClientRole(role: string | undefined): role is ClientRole {
@@ -455,6 +471,7 @@ export function createHealthResponse(
       lastWriteAt: runtimeState.auditLog.lastWriteAt,
       error: runtimeState.auditLog.lastError
     },
+    restoredFromSnapshot: runtimeState.snapshot.restoredFromSnapshot,
     emergencyReady: true,
     emergencyStatus: {
       ready: true,

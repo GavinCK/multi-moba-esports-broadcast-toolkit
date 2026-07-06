@@ -15,6 +15,7 @@ import {
   type RuntimeSocketClientInfo,
   type ServerRuntimeState
 } from "./runtime-state.js";
+import { flushRuntimeStateSnapshot } from "./state-snapshot.js";
 
 const UNSAFE_CLIENT_METADATA_PATTERN = new RegExp(
   ["api[_-]?key", `sec${"ret"}`, "token", "password"].join("|"),
@@ -234,6 +235,8 @@ export function createSocketRealtimeController(
     },
 
     async close() {
+      flushRuntimeStateSnapshot(runtimeState);
+
       if (!io) {
         return;
       }
