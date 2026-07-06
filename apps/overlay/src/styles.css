@@ -424,6 +424,18 @@ body {
   font-size: 20px;
 }
 
+.draft-slot__icon--empty {
+  border: 1px dashed rgb(255 255 255 / 24%);
+  background: rgb(255 255 255 / 4%);
+}
+
+.draft-slot__icon--empty::before {
+  content: "";
+  width: 34px;
+  height: 2px;
+  background: rgb(255 255 255 / 30%);
+}
+
 .draft-slot__copy {
   min-width: 0;
 }

@@ -13,6 +13,7 @@ import {
   resetDraft,
   resetFinalLineupSide,
   resumeDraft,
+  skipDraftAction,
   startDraft,
   undoLastAction,
   type DraftEngineError,
@@ -1548,6 +1549,24 @@ function validateHeroPayload(
   return heroId;
 }
 
+function createDraftActionPayloadMetadata(
+  payload: Record<string, unknown>,
+  entry: DraftRuntimeEntry,
+  actionId: string,
+  extra: Record<string, unknown> = {}
+): JsonObject {
+  const action = entry.draft.actions.find((item) => item.id === actionId);
+
+  return createPayloadMetadata(payload, {
+    actionId,
+    actionType: action?.type,
+    team: action?.team,
+    slotIndex: action?.slotIndex,
+    phaseId: action?.phaseId,
+    ...extra
+  });
+}
+
 function readLineupSide(payload: Record<string, unknown>): DraftLineupSide | AppError {
   const side = payload.side;
 
@@ -1892,13 +1911,13 @@ async function handleDraftPost(
       return;
     }
 
-    const heroId = validateHeroPayload(response, payload, entry);
-
-    if (!heroId) {
-      return;
-    }
-
     if (actionOperation === "hover") {
+      const heroId = validateHeroPayload(response, payload, entry);
+
+      if (!heroId) {
+        return;
+      }
+
       applyDraftResult(
         response,
         runtimeState,
@@ -1917,6 +1936,12 @@ async function handleDraftPost(
     }
 
     if (actionOperation === "lock") {
+      const heroId = validateHeroPayload(response, payload, entry);
+
+      if (!heroId) {
+        return;
+      }
+
       applyDraftResult(
         response,
         runtimeState,
@@ -1929,6 +1954,24 @@ async function handleDraftPost(
           timestamp,
           actionId,
           metadata: createPayloadMetadata(payload, { heroId })
+        }
+      );
+      return;
+    }
+
+    if (actionOperation === "skip") {
+      applyDraftResult(
+        response,
+        runtimeState,
+        realtime,
+        entry,
+        skipDraftAction(entry.draft, entry.ruleset, { actionId, now: timestamp, operatorId }),
+        {
+          event: "DRAFT_ACTION_SKIPPED",
+          operatorId,
+          timestamp,
+          actionId,
+          metadata: createDraftActionPayloadMetadata(payload, entry, actionId)
         }
       );
       return;

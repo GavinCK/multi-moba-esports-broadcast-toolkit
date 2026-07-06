@@ -45,6 +45,19 @@ interface ResolvedDraftAction {
   heroId: string;
 }
 
+interface ResolvedDraftActionSlot {
+  phase: DraftPhaseDefinition;
+  phaseIndex: number;
+  action: DraftAction;
+  actionIndex: number;
+}
+
+interface ResolvedRedoAction {
+  resolved: ResolvedDraftActionSlot;
+  heroId: string | null;
+  previousStatus: DraftActionStatus;
+}
+
 function getNow(options?: DraftActionOperationOptions | DraftHistoryOperationOptions): string {
   return options?.now ?? new Date().toISOString();
 }
@@ -171,14 +184,14 @@ function summarizeAction(action: DraftAction): JsonObject {
   };
 }
 
-function createActionMetadata(action: DraftAction, heroId: string): JsonObject {
+function createActionMetadata(action: DraftAction, heroId?: string | null): JsonObject {
   return {
     actionId: action.id,
     phaseId: action.phaseId,
     actionType: action.type,
     team: action.team,
     slotIndex: action.slotIndex,
-    heroId,
+    heroId: heroId ?? null,
     previousStatus: action.status,
     hoveredAt: action.hoveredAt ?? null,
     lockedAt: action.lockedAt ?? null,
@@ -411,6 +424,125 @@ function resolveDraftAction(
   });
 }
 
+function resolveSkippableDraftAction(
+  state: DraftState,
+  ruleset: DraftRuleset,
+  input: DraftActionOperationOptions = {}
+): DraftEngineResult<ResolvedDraftActionSlot> {
+  const stateMatchesRuleset = ensureStateMatchesRuleset(state, ruleset);
+
+  if (!stateMatchesRuleset.ok) {
+    return fail(stateMatchesRuleset.error);
+  }
+
+  if (state.status !== "LIVE") {
+    return fail({
+      code: "draft-invalid-status",
+      message: "Draft actions can only be skipped while the draft is LIVE.",
+      details: { currentStatus: state.status, operation: "skip" }
+    });
+  }
+
+  const phase = ruleset.phases[state.currentPhaseIndex];
+
+  if (!phase) {
+    return fail({
+      code: "draft-no-current-phase",
+      message: "Draft skip requires a current phase."
+    });
+  }
+
+  if (phase.type !== "BAN") {
+    return fail({
+      code: "draft-skip-not-ban",
+      message: "Only BAN action slots can be skipped.",
+      details: { phaseId: phase.id, phaseType: phase.type }
+    });
+  }
+
+  const phaseActions = getPhaseActions(state.actions, phase.id);
+  const targetAction = input.actionId
+    ? state.actions.find((action) => action.id === input.actionId)
+    : phaseActions.find((action) => action.status === "PENDING");
+
+  if (!targetAction) {
+    return fail({
+      code: "draft-action-not-found",
+      message: "No pending ban slot was found to skip.",
+      details: { actionId: input.actionId ?? null, phaseId: phase.id }
+    });
+  }
+
+  if (targetAction.phaseId !== phase.id) {
+    return fail({
+      code: "draft-action-not-current-phase",
+      message: "Draft actions can only affect a slot in the current phase.",
+      details: {
+        actionId: targetAction.id,
+        actionPhaseId: targetAction.phaseId,
+        currentPhaseId: phase.id
+      }
+    });
+  }
+
+  if (targetAction.type !== "BAN") {
+    return fail({
+      code: "draft-skip-not-ban",
+      message: "Only BAN action slots can be skipped.",
+      details: { actionId: targetAction.id, actionType: targetAction.type }
+    });
+  }
+
+  if (targetAction.status !== "PENDING") {
+    return fail({
+      code: "draft-action-not-pending",
+      message: "Only pending ban slots can be skipped.",
+      details: { actionId: targetAction.id, status: targetAction.status }
+    });
+  }
+
+  if (isConcreteTeamSide(phase.team) && targetAction.team !== phase.team) {
+    return fail({
+      code: "draft-action-team-mismatch",
+      message: "Draft action slot team must match the current phase team.",
+      details: { actionId: targetAction.id, actionTeam: targetAction.team, phaseTeam: phase.team }
+    });
+  }
+
+  if (input.expectedType && input.expectedType !== targetAction.type) {
+    return fail({
+      code: "draft-action-type-mismatch",
+      message: "Requested action type does not match the target slot.",
+      details: { actionId: targetAction.id, expectedType: input.expectedType, actionType: targetAction.type }
+    });
+  }
+
+  if (input.expectedTeam && input.expectedTeam !== targetAction.team) {
+    return fail({
+      code: "draft-action-team-mismatch",
+      message: "Requested team does not match the target slot.",
+      details: { actionId: targetAction.id, expectedTeam: input.expectedTeam, actionTeam: targetAction.team }
+    });
+  }
+
+  if (input.expectedPhaseId && input.expectedPhaseId !== targetAction.phaseId) {
+    return fail({
+      code: "draft-action-phase-mismatch",
+      message: "Requested phase does not match the target slot.",
+      details: { actionId: targetAction.id, expectedPhaseId: input.expectedPhaseId, actionPhaseId: targetAction.phaseId }
+    });
+  }
+
+  const actionIndex = state.actions.findIndex((action) => action.id === targetAction.id);
+
+  return ok({
+    phase,
+    phaseIndex: state.currentPhaseIndex,
+    action: targetAction,
+    actionIndex
+  });
+}
+
 function appendLockedHeroIds(
   state: DraftState,
   action: DraftAction,
@@ -505,6 +637,85 @@ function lockResolvedAction(
   return ok(maybeStartFinalLineupPhase(nextState, { now: timestamp, operatorId }));
 }
 
+function skipResolvedAction(
+  state: DraftState,
+  ruleset: DraftRuleset,
+  resolved: ResolvedDraftActionSlot,
+  timestamp: string,
+  operatorId: string | undefined,
+  historyAction: "ACTION_SKIPPED" | "ACTION_REDONE"
+): DraftEngineResult<DraftState> {
+  const skippedAction: DraftAction = {
+    ...resolved.action,
+    heroId: null,
+    status: "SKIPPED",
+    operatorId,
+    hoveredAt: undefined,
+    lockedAt: undefined
+  };
+  const actions = state.actions.map((action, actionIndex) =>
+    actionIndex === resolved.actionIndex ? skippedAction : action
+  );
+  const phaseComplete = getPhaseActions(actions, resolved.phase.id).every(isActionComplete);
+  const shouldAdvance = phaseComplete && resolved.phase.autoAdvance !== false;
+  const calculatedTimer = calculateTimerState({ timer: state.timer, now: timestamp });
+
+  if (!calculatedTimer.ok) {
+    return fail(calculatedTimer.error);
+  }
+
+  const currentPhaseIndex = shouldAdvance
+    ? getNextIncompletePhaseIndexAfter(actions, ruleset, resolved.phaseIndex + 1)
+    : state.currentPhaseIndex;
+  const timer = shouldAdvance
+    ? createTimerForPhase(ruleset.phases[currentPhaseIndex] ?? null, timestamp, state.status)
+    : calculatedTimer.value;
+  const stateAfterSkip = {
+    currentPhaseIndex,
+    lockedHeroIds: [...state.lockedHeroIds],
+    bannedHeroIds: [...state.bannedHeroIds],
+    pickedHeroIds: [...state.pickedHeroIds]
+  };
+  const skipHistory = createHistoryEntry(
+    state,
+    historyAction,
+    timestamp,
+    operatorId,
+    summarizeDraftActionChange(state, resolved.action),
+    summarizeDraftActionChange(stateAfterSkip, skippedAction),
+    createActionMetadata(resolved.action)
+  );
+  let history = [...state.history, skipHistory];
+
+  if (shouldAdvance && currentPhaseIndex !== state.currentPhaseIndex) {
+    history = [
+      ...history,
+      createHistoryEntry(
+        { history },
+        "PHASE_ADVANCED",
+        timestamp,
+        operatorId,
+        { currentPhaseIndex: state.currentPhaseIndex, phaseId: resolved.phase.id },
+        {
+          currentPhaseIndex,
+          phaseId: ruleset.phases[currentPhaseIndex]?.id ?? null
+        }
+      )
+    ];
+  }
+
+  const nextState: DraftState = {
+    ...state,
+    currentPhaseIndex,
+    timer,
+    actions,
+    history,
+    updatedAt: timestamp
+  };
+
+  return ok(maybeStartFinalLineupPhase(nextState, { now: timestamp, operatorId }));
+}
+
 function removeLastMatchingHero(heroIds: readonly string[], heroId: string): string[] {
   const indexToRemove = heroIds.lastIndexOf(heroId);
 
@@ -546,7 +757,11 @@ function findLastReversibleActionIndex(state: DraftState): number {
   for (let historyIndex = state.history.length - 1; historyIndex >= 0; historyIndex -= 1) {
     const historyEntry = state.history[historyIndex];
 
-    if (historyEntry?.action !== "HERO_LOCKED" && historyEntry?.action !== "ACTION_REDONE") {
+    if (
+      historyEntry?.action !== "HERO_LOCKED" &&
+      historyEntry?.action !== "ACTION_SKIPPED" &&
+      historyEntry?.action !== "ACTION_REDONE"
+    ) {
       continue;
     }
 
@@ -579,7 +794,7 @@ function findLastReversibleActionIndex(state: DraftState): number {
 function resolveRedoAction(
   state: DraftState,
   ruleset: DraftRuleset
-): DraftEngineResult<ResolvedDraftAction> {
+): DraftEngineResult<ResolvedRedoAction> {
   const stateMatchesRuleset = ensureStateMatchesRuleset(state, ruleset);
 
   if (!stateMatchesRuleset.ok) {
@@ -599,10 +814,17 @@ function resolveRedoAction(
   const heroId = readMetadataString(lastHistory.metadata, "heroId");
   const previousStatus = readMetadataString(lastHistory.metadata, "previousStatus");
 
-  if (!actionId || !heroId || previousStatus !== "LOCKED") {
+  if (!actionId || (previousStatus !== "LOCKED" && previousStatus !== "SKIPPED")) {
     return fail({
       code: "draft-redo-metadata-invalid",
-      message: "Redo could not identify a locked action from the latest undo entry."
+      message: "Redo could not identify a locked or skipped action from the latest undo entry."
+    });
+  }
+
+  if (previousStatus === "LOCKED" && !heroId) {
+    return fail({
+      code: "draft-redo-metadata-invalid",
+      message: "Redo could not identify the locked hero from the latest undo entry."
     });
   }
 
@@ -644,18 +866,42 @@ function resolveRedoAction(
     });
   }
 
-  const duplicateCheck = validateDuplicateHero(state, ruleset, phase, action, heroId);
+  if (previousStatus === "SKIPPED") {
+    if (phase.type !== "BAN" || action.type !== "BAN") {
+      return fail({
+        code: "draft-skip-not-ban",
+        message: "Only BAN action slots can be skipped.",
+        details: { actionId: action.id, actionType: action.type, phaseType: phase.type }
+      });
+    }
+
+    return ok({
+      resolved: {
+        phase,
+        phaseIndex,
+        action,
+        actionIndex
+      },
+      heroId: null,
+      previousStatus
+    });
+  }
+
+  const duplicateCheck = validateDuplicateHero(state, ruleset, phase, action, heroId as string);
 
   if (!duplicateCheck.ok) {
     return fail(duplicateCheck.error);
   }
 
   return ok({
-    phase,
-    phaseIndex,
-    action,
-    actionIndex,
-    heroId
+    resolved: {
+      phase,
+      phaseIndex,
+      action,
+      actionIndex
+    },
+    heroId: heroId as string,
+    previousStatus
   });
 }
 
@@ -740,6 +986,45 @@ export function lockHero(
     input.operatorId,
     "HERO_LOCKED"
   );
+}
+
+export function skipDraftAction(
+  state: DraftState,
+  ruleset: DraftRuleset,
+  input: DraftActionOperationOptions = {}
+): DraftEngineResult<DraftState> {
+  const resolved = resolveSkippableDraftAction(state, ruleset, input);
+
+  if (!resolved.ok) {
+    return fail(resolved.error);
+  }
+
+  return skipResolvedAction(
+    state,
+    ruleset,
+    resolved.value,
+    getNow(input),
+    input.operatorId,
+    "ACTION_SKIPPED"
+  );
+}
+
+export function validateSkipDraftAction(
+  state: DraftState,
+  ruleset: DraftRuleset,
+  input: DraftActionOperationOptions = {}
+): DraftValidationResult {
+  const result = resolveSkippableDraftAction(state, ruleset, input);
+
+  if (result.ok) {
+    return { valid: true };
+  }
+
+  return {
+    valid: false,
+    reason: result.error.message,
+    issues: [toValidationIssue(result.error)]
+  };
 }
 
 export function advancePhase(
@@ -898,14 +1183,14 @@ export function undoLastAction(
   };
   const history = [
     ...state.history,
-    createHistoryEntry(
+      createHistoryEntry(
       state,
       "ACTION_UNDONE",
       timestamp,
       options.operatorId,
       summarizeDraftActionChange(state, action),
       summarizeDraftActionChange(stateAfterUndo, pendingAction),
-      createActionMetadata(action, action.heroId ?? "")
+      createActionMetadata(action, action.heroId)
     )
   ];
 
@@ -941,10 +1226,24 @@ export function redoLastUndoneAction(
     return fail(resolved.error);
   }
 
+  if (resolved.value.previousStatus === "SKIPPED") {
+    return skipResolvedAction(
+      state,
+      ruleset,
+      resolved.value.resolved,
+      getNow(options),
+      options.operatorId,
+      "ACTION_REDONE"
+    );
+  }
+
   return lockResolvedAction(
     state,
     ruleset,
-    resolved.value,
+    {
+      ...resolved.value.resolved,
+      heroId: resolved.value.heroId as string
+    },
     getNow(options),
     options.operatorId,
     "ACTION_REDONE"

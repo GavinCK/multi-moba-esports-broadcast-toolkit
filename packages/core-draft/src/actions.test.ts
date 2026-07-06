@@ -15,9 +15,11 @@ import {
   reorderFinalLineup,
   resetFinalLineupSide,
   resumeDraft,
+  skipDraftAction,
   startDraft,
   undoLastAction,
-  validateDraftAction
+  validateDraftAction,
+  validateSkipDraftAction
 } from "./index";
 import type { DraftEngineResult } from "./index";
 
@@ -108,6 +110,31 @@ const countTwoThirtySecondRuleset: DraftRuleset = {
       team: "RED",
       count: 2,
       timeSeconds: 30,
+      allowHover: true,
+      autoAdvance: true
+    }
+  ]
+};
+
+const countTwoBanRuleset: DraftRuleset = {
+  ...actionRuleset,
+  id: "generic-count-two-ban-test",
+  phases: [
+    {
+      id: "blue-ban-1-2",
+      type: "BAN",
+      team: "BLUE",
+      count: 2,
+      timeSeconds: 30,
+      allowHover: true,
+      autoAdvance: true
+    },
+    {
+      id: "red-pick-1",
+      type: "PICK",
+      team: "RED",
+      count: 1,
+      timeSeconds: 45,
       allowHover: true,
       autoAdvance: true
     }
@@ -470,6 +497,150 @@ describe("draft lock actions and duplicate blocking", () => {
     expect(afterSecondPick.pickedHeroIds).toEqual(["hero-repeat", "hero-repeat"]);
     expect(afterSecondPick.lockedHeroIds).toEqual(["hero-ban-1", "hero-repeat", "hero-repeat"]);
     expect(afterSecondPick.currentPhaseIndex).toBe(2);
+  });
+});
+
+describe("draft skip actions", () => {
+  it("skips a valid pending ban without adding a hero and advances to the next phase", () => {
+    const liveDraft = createLiveDraft();
+    const validation = validateSkipDraftAction(liveDraft, actionRuleset, {
+      actionId: "blue-ban-1:slot-0",
+      expectedType: "BAN",
+      expectedTeam: "BLUE"
+    });
+    const skippedDraft = unwrap(
+      skipDraftAction(liveDraft, actionRuleset, {
+        actionId: "blue-ban-1:slot-0",
+        now: plusOneSecond,
+        operatorId: "operator-1"
+      })
+    );
+
+    expect(validation).toEqual({ valid: true });
+    expect(skippedDraft.actions[0]).toMatchObject({
+      status: "SKIPPED",
+      heroId: null,
+      operatorId: "operator-1",
+      hoveredAt: undefined,
+      lockedAt: undefined
+    });
+    expect(skippedDraft.lockedHeroIds).toEqual([]);
+    expect(skippedDraft.bannedHeroIds).toEqual([]);
+    expect(skippedDraft.pickedHeroIds).toEqual([]);
+    expect(skippedDraft.currentPhaseIndex).toBe(1);
+    expect(skippedDraft.timer).toEqual({
+      isRunning: true,
+      phaseStartedAt: plusOneSecond,
+      remainingSeconds: 60,
+      originalSeconds: 60
+    });
+    expect(skippedDraft.history.map((entry) => entry.action)).toContain("ACTION_SKIPPED");
+    expect(skippedDraft.history.at(-1)?.action).toBe("PHASE_ADVANCED");
+  });
+
+  it("waits for every slot in a multi-count ban phase before advancing", () => {
+    const liveDraft = createLiveDraft(countTwoBanRuleset);
+    const afterFirstSkip = unwrap(
+      skipDraftAction(liveDraft, countTwoBanRuleset, {
+        actionId: "blue-ban-1-2:slot-0",
+        now: plusOneSecond,
+        operatorId: "operator-1"
+      })
+    );
+    const afterSecondSkip = unwrap(
+      skipDraftAction(afterFirstSkip, countTwoBanRuleset, {
+        actionId: "blue-ban-1-2:slot-1",
+        now: plusTwoSeconds,
+        operatorId: "operator-1"
+      })
+    );
+
+    expect(afterFirstSkip.currentPhaseIndex).toBe(0);
+    expect(afterFirstSkip.timer).toMatchObject({
+      isRunning: true,
+      remainingSeconds: 29,
+      originalSeconds: 30
+    });
+    expect(afterSecondSkip.currentPhaseIndex).toBe(1);
+    expect(afterSecondSkip.timer).toEqual({
+      isRunning: true,
+      phaseStartedAt: plusTwoSeconds,
+      remainingSeconds: 45,
+      originalSeconds: 45
+    });
+  });
+
+  it("rejects skip attempts on pick slots and out-of-phase ban slots without mutating state", () => {
+    const liveDraft = createLiveDraft();
+    const afterBan = unwrap(
+      skipDraftAction(liveDraft, actionRuleset, {
+        actionId: "blue-ban-1:slot-0",
+        now: plusOneSecond
+      })
+    );
+    const beforeLiveDraft = JSON.stringify(liveDraft);
+    const beforeAfterBan = JSON.stringify(afterBan);
+    const outOfPhase = skipDraftAction(liveDraft, actionRuleset, {
+      actionId: "red-ban-1:slot-0",
+      now: plusOneSecond
+    });
+    const pickSkip = skipDraftAction(afterBan, actionRuleset, {
+      actionId: "red-pick-1-2:slot-0",
+      now: plusTwoSeconds
+    });
+
+    expect(outOfPhase.ok).toBe(false);
+    expect(outOfPhase.error.code).toBe("draft-action-not-current-phase");
+    expect(pickSkip.ok).toBe(false);
+    expect(pickSkip.error.code).toBe("draft-skip-not-ban");
+    expect(JSON.stringify(liveDraft)).toBe(beforeLiveDraft);
+    expect(JSON.stringify(afterBan)).toBe(beforeAfterBan);
+  });
+
+  it("undoes and redoes a skipped ban as an empty completed slot", () => {
+    const skippedDraft = unwrap(
+      skipDraftAction(createLiveDraft(), actionRuleset, {
+        actionId: "blue-ban-1:slot-0",
+        now: plusOneSecond,
+        operatorId: "operator-1"
+      })
+    );
+    const undoneDraft = unwrap(
+      undoLastAction(skippedDraft, actionRuleset, {
+        now: plusTwoSeconds,
+        operatorId: "operator-1"
+      })
+    );
+    const redoneDraft = unwrap(
+      redoLastUndoneAction(undoneDraft, actionRuleset, {
+        now: plusThreeSeconds,
+        operatorId: "operator-1"
+      })
+    );
+
+    expect(undoneDraft.actions[0]).toMatchObject({
+      status: "PENDING",
+      heroId: null,
+      operatorId: undefined
+    });
+    expect(undoneDraft.lockedHeroIds).toEqual([]);
+    expect(undoneDraft.bannedHeroIds).toEqual([]);
+    expect(undoneDraft.currentPhaseIndex).toBe(0);
+    expect(undoneDraft.history.at(-1)?.action).toBe("ACTION_UNDONE");
+    expect(undoneDraft.history.at(-1)?.metadata).toMatchObject({
+      actionId: "blue-ban-1:slot-0",
+      previousStatus: "SKIPPED",
+      heroId: null
+    });
+
+    expect(redoneDraft.actions[0]).toMatchObject({
+      status: "SKIPPED",
+      heroId: null
+    });
+    expect(redoneDraft.lockedHeroIds).toEqual([]);
+    expect(redoneDraft.bannedHeroIds).toEqual([]);
+    expect(redoneDraft.currentPhaseIndex).toBe(1);
+    expect(redoneDraft.history.some((entry) => entry.action === "ACTION_REDONE")).toBe(true);
   });
 });
 

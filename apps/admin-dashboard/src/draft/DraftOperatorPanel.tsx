@@ -833,6 +833,12 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
   const canCreateDraft = Boolean(snapshot && selectedMatch && selectedGame && !selectedDraft && selectedGame.rulesetId);
   const canHover = Boolean(selectedDraft && selectedDraft.status === "LIVE" && activeAction && selectedHero);
   const canLock = canHover && activeAction?.status !== "LOCKED";
+  const canSkipBan = Boolean(
+    selectedDraft &&
+      selectedDraft.status === "LIVE" &&
+      activeAction?.type === "BAN" &&
+      activeAction.status === "PENDING"
+  );
   const currentHeroIsLocked = selectedHeroId ? lockedHeroIds.has(selectedHeroId) : false;
 
   function clearFeedback(): void {
@@ -965,6 +971,32 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
             `/api/drafts/${selectedDraft.id}/actions/${activeAction.id}/lock`,
             {
               heroId: selectedHero.id,
+              operatorId: getOperatorId(operatorLabel),
+              confirm: true
+            }
+          )
+        )
+    });
+  }
+
+  function confirmSkipBan(): void {
+    if (!selectedDraft || !activeAction || activeAction.type !== "BAN") {
+      return;
+    }
+
+    openConfirmation({
+      title: "No Ban",
+      message: `Forfeit ${formatActionLabel(
+        activeAction,
+        draft?.actions ?? currentActions
+      )}. The ban slot will remain empty and the draft will advance normally when the phase is complete.`,
+      confirmLabel: "No Ban",
+      reasonRequired: false,
+      run: async () =>
+        runMutation("No Ban accepted by server.", () =>
+          props.apiClient.post<DashboardDraftMutationResponse>(
+            `/api/drafts/${selectedDraft.id}/actions/${activeAction.id}/skip`,
+            {
               operatorId: getOperatorId(operatorLabel),
               confirm: true
             }
@@ -1435,6 +1467,16 @@ export function DraftOperatorPanel(props: DraftOperatorPanelProps): ReactNode {
               >
                 Lock Selected
               </button>
+              {activeAction?.type === "BAN" ? (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={!canSkipBan || mutationBusy}
+                  onClick={confirmSkipBan}
+                >
+                  No Ban
+                </button>
+              ) : null}
             </div>
             {currentHeroIsLocked && !allowDuplicateHeroes ? (
               <p className="inline-warning">Selected entity is already locked in this draft; the server will reject duplicates.</p>

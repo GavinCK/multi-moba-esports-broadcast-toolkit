@@ -294,6 +294,10 @@ function expectApiEnvelope(body: unknown, ok: boolean): void {
   expect(body).toEqual(expect.objectContaining({ ok }));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function expectLoadedPackage(result: ReturnType<typeof loadEventPackage>): LoadedEventPackage {
   expect(result.ok, result.ok ? "" : JSON.stringify(result.error)).toBe(true);
 
@@ -1548,6 +1552,158 @@ describe("server runtime foundation", () => {
         const logText = JSON.stringify(entries);
         expect(logText).not.toMatch(/do-not-log|ignoredSecret|apiKey|secret|hiddenCompetitiveInformation/i);
         expect(logText).not.toMatch(/loadHeroes|loadDefaultRulesets|getHeroById|validateDraftAction|getAssetUrl/);
+      });
+    } finally {
+      rmSync(tempPackagePath, { recursive: true, force: true });
+    }
+  });
+
+  it("applies manual no-ban skips for ban slots and rejects pick skips without audit churn", async () => {
+    const tempPackagePath = createTempEventPackage("mmbt-draft-skip-");
+    const genericBanActionIds = [
+      "ban-1-blue:slot-0",
+      "ban-1-red:slot-0",
+      "ban-2-blue:slot-0",
+      "ban-2-red:slot-0",
+      "ban-3-blue:slot-0",
+      "ban-3-red:slot-0"
+    ];
+
+    try {
+      await withServer({ eventPackagePath: tempPackagePath }, async ({ baseUrl }) => {
+        const start = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/start`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            now: "2026-06-01T00:20:00.000Z"
+          }
+        });
+        const firstSkip = await requestJson(
+          baseUrl,
+          `/api/drafts/${genericDraftId}/actions/${genericBanActionIds[0]}/skip`,
+          {
+            method: "POST",
+            body: {
+              operatorId: "draft-op",
+              confirm: true,
+              now: "2026-06-01T00:20:05.000Z"
+            }
+          }
+        );
+
+        for (let index = 1; index < genericBanActionIds.length; index += 1) {
+          const skip = await requestJson(
+            baseUrl,
+            `/api/drafts/${genericDraftId}/actions/${genericBanActionIds[index]}/skip`,
+            {
+              method: "POST",
+              body: {
+                operatorId: "draft-op",
+                confirm: true,
+                now: `2026-06-01T00:20:${String(index + 5).padStart(2, "0")}.000Z`
+              }
+            }
+          );
+
+          expect(skip.status).toBe(200);
+        }
+
+        const pickSkip = await requestJson(baseUrl, `/api/drafts/${genericDraftId}/actions/pick-1-blue:slot-0/skip`, {
+          method: "POST",
+          body: {
+            operatorId: "draft-op",
+            confirm: true,
+            now: "2026-06-01T00:20:20.000Z"
+          }
+        });
+        const stateAfter = await requestJson(baseUrl, "/api/state");
+        const entries = readAuditLogEntries(tempPackagePath);
+        const firstSkipEntry = entries.find(
+          (entry): entry is { event: string; actionId: string; result: Record<string, unknown>; metadata: Record<string, unknown> } =>
+            isRecord(entry) && entry.event === "DRAFT_ACTION_SKIPPED" && entry.actionId === genericBanActionIds[0]
+        );
+
+        expect(start.status).toBe(200);
+        expect(firstSkip.status).toBe(200);
+        expect(firstSkip.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 3,
+            draft: {
+              summary: {
+                currentPhase: expect.objectContaining({
+                  id: "ban-1-red"
+                }),
+                actionCounts: expect.objectContaining({
+                  skipped: 1
+                })
+              },
+              draft: {
+                actions: expect.arrayContaining([
+                  expect.objectContaining({
+                    id: genericBanActionIds[0],
+                    status: "SKIPPED",
+                    heroId: null
+                  })
+                ]),
+                lockedHeroIds: [],
+                bannedHeroIds: [],
+                pickedHeroIds: []
+              }
+            }
+          }
+        });
+        expect(pickSkip.status).toBe(409);
+        expect(pickSkip.body).toMatchObject({
+          ok: false,
+          error: {
+            code: "DRAFT_INVALID_ACTION"
+          }
+        });
+        expect(stateAfter.body).toMatchObject({
+          ok: true,
+          data: {
+            revision: 8,
+            drafts: {
+              [genericDraftId]: expect.objectContaining({
+                currentPhase: expect.objectContaining({
+                  id: "pick-1-blue"
+                }),
+                actionCounts: expect.objectContaining({
+                  skipped: 6
+                }),
+                lockedHeroIds: [],
+                bannedHeroIds: [],
+                pickedHeroIds: []
+              })
+            }
+          }
+        });
+        expect(entries.map((entry) => (entry as { event: string }).event)).toEqual([
+          "DRAFT_STARTED",
+          "DRAFT_ACTION_SKIPPED",
+          "DRAFT_ACTION_SKIPPED",
+          "DRAFT_ACTION_SKIPPED",
+          "DRAFT_ACTION_SKIPPED",
+          "DRAFT_ACTION_SKIPPED",
+          "DRAFT_ACTION_SKIPPED"
+        ]);
+        expect(firstSkipEntry).toMatchObject({
+          actionId: genericBanActionIds[0],
+          result: expect.objectContaining({
+            actionId: genericBanActionIds[0],
+            actionType: "BAN",
+            team: "BLUE",
+            heroId: null
+          }),
+          metadata: expect.objectContaining({
+            actionId: genericBanActionIds[0],
+            actionType: "BAN",
+            team: "BLUE",
+            slotIndex: 0,
+            phaseId: "ban-1-blue"
+          })
+        });
       });
     } finally {
       rmSync(tempPackagePath, { recursive: true, force: true });

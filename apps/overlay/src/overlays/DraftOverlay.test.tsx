@@ -149,11 +149,11 @@ function createActions(status: "LIVE" | "COMPLETE" = "LIVE"): DraftAction[] {
     createAction("ban-blue-1:slot-0", "ban-blue-1", "BAN", "BLUE", 0, "LOCKED", "hero_moon"),
     createAction("ban-red-1:slot-0", "ban-red-1", "BAN", "RED", 0, "HOVER", "hero_sun"),
     createAction("ban-blue-2:slot-0", "ban-blue-2", "BAN", "BLUE", 0, "PENDING", null),
-    createAction("ban-red-2:slot-0", "ban-red-2", "BAN", "RED", 0, "PENDING", null),
+    createAction("ban-red-2:slot-0", "ban-red-2", "BAN", "RED", 0, "SKIPPED", null),
     createAction("pick-blue-1:slot-0", "pick-blue-1", "PICK", "BLUE", 0, "LOCKED", "hero_ember"),
     createAction("pick-red-1:slot-0", "pick-red-1", "PICK", "RED", 0, "LOCKED", "hero_oath"),
     createAction("pick-blue-2:slot-0", "pick-blue-2", "PICK", "BLUE", 0, "PENDING", null),
-    createAction("pick-red-2:slot-0", "pick-red-2", "PICK", "RED", 0, "SKIPPED", null)
+    createAction("pick-red-2:slot-0", "pick-red-2", "PICK", "RED", 0, "PENDING", null)
   ];
 }
 
@@ -577,7 +577,26 @@ describe("draft overlay", () => {
     expect(markup).toContain("draft-slot--pending");
     expect(markup).toContain("draft-slot--hover");
     expect(markup).toContain("draft-slot--locked");
-    expect(markup).toContain("Manual skip");
+    expect(markup).toContain('data-hero-icon="empty"');
+    expect(markup).not.toContain("Manual skip");
+    expect(markup).not.toContain(">Skipped<");
+  });
+
+  it("maps a skipped ban to an empty no-label overlay slot", () => {
+    const viewModel = selectDraftOverlayViewModel(createClientState(), "match_grand-final");
+    const skippedBan = viewModel.redBans.find((slot) => slot.action.id === "ban-red-2:slot-0");
+
+    expect(skippedBan).toMatchObject({
+      isNoBan: true,
+      label: "",
+      statusLabel: "",
+      sublabel: "",
+      action: expect.objectContaining({
+        type: "BAN",
+        status: "SKIPPED",
+        heroId: null
+      })
+    });
   });
 
   it("renders completed draft state while preserving final picks and bans", () => {

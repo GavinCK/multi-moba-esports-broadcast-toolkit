@@ -40,6 +40,7 @@ interface DraftOverlaySlot {
   statusLabel: string;
   isActive: boolean;
   isManualOverride: boolean;
+  isNoBan: boolean;
   player: OverlayPresentationPlayerViewModel | null;
   playerLabel: string | null;
   playerRole: string | null;
@@ -326,6 +327,10 @@ function getDraftActions(
 }
 
 function getSlotStatusLabel(action: DraftAction): string {
+  if (isSkippedBan(action)) {
+    return "";
+  }
+
   switch (action.status) {
     case "LOCKED":
       return "Locked";
@@ -342,6 +347,10 @@ function getSlotStatusLabel(action: DraftAction): string {
 }
 
 function getSlotSublabel(action: DraftAction): string {
+  if (isSkippedBan(action)) {
+    return "";
+  }
+
   if (action.status === "SKIPPED") {
     return "Manual skip";
   }
@@ -357,6 +366,10 @@ function isManualOverrideAction(action: DraftAction): boolean {
   return action.metadata?.manualOverride === true;
 }
 
+function isSkippedBan(action: DraftAction): boolean {
+  return action.type === "BAN" && action.status === "SKIPPED";
+}
+
 function buildSlots(
   state: OverlayRuntimeState,
   draft: OverlayDraftSummary,
@@ -364,7 +377,10 @@ function buildSlots(
 ): DraftOverlaySlot[] {
   return getDraftActions(draft, ruleset, state.timestamp).map((action) => {
     const hero = findHero(state, action.heroId);
-    const heroLabel = hero?.displayName ?? (action.heroId ? formatEntityId(action.heroId) : "Awaiting selection");
+    const isNoBan = isSkippedBan(action);
+    const heroLabel = isNoBan
+      ? ""
+      : hero?.displayName ?? (action.heroId ? formatEntityId(action.heroId) : "Awaiting selection");
 
     return {
       action,
@@ -374,6 +390,7 @@ function buildSlots(
       statusLabel: getSlotStatusLabel(action),
       isActive: draft.currentActionIds.includes(action.id),
       isManualOverride: isManualOverrideAction(action),
+      isNoBan,
       player: null,
       playerLabel: null,
       playerRole: null
@@ -639,6 +656,10 @@ function TeamLogo({ team, fallback }: { team: Team | null; fallback: string }) {
 }
 
 function HeroIcon({ slot }: { slot: DraftOverlaySlot }) {
+  if (slot.isNoBan) {
+    return <div className="draft-slot__icon draft-slot__icon--empty" data-hero-icon="empty" aria-hidden="true" />;
+  }
+
   const icon = resolveHeroIcon(slot.hero);
   const initials = slot.action.heroId ? formatEntityId(slot.action.heroId).slice(0, 2).toUpperCase() : "--";
 
@@ -713,11 +734,13 @@ function SlotList({
             data-active-slot={slot.isActive ? "true" : "false"}
           >
             <HeroIcon slot={slot} />
-            <div className="draft-slot__copy">
-              <span>{slot.statusLabel}</span>
-              <strong>{slot.label}</strong>
-              <small>{slot.isManualOverride ? "Manual override" : slot.sublabel}</small>
-            </div>
+            {slot.isNoBan ? null : (
+              <div className="draft-slot__copy">
+                <span>{slot.statusLabel}</span>
+                <strong>{slot.label}</strong>
+                <small>{slot.isManualOverride ? "Manual override" : slot.sublabel}</small>
+              </div>
+            )}
           </article>
         ))}
       </div>

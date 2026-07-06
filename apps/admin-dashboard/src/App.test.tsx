@@ -2230,6 +2230,77 @@ describe("DashboardView", () => {
     });
   });
 
+  it("confirmation-gates No Ban without requiring a selected entity", async () => {
+    const readyState = createStateWithDraftStatus("LIVE");
+    const { apiClient, postCalls } = createDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "draft"
+    });
+
+    await flushAsync();
+
+    const noBanButton = findButton(container, "No Ban");
+
+    expect(noBanButton.disabled).toBe(false);
+
+    act(() => {
+      noBanButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("The ban slot will remain empty");
+    expect(postCalls).toHaveLength(0);
+
+    await act(async () => {
+      findDialogButton(container, "No Ban").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(postCalls).toHaveLength(1);
+    expect(postCalls[0]).toMatchObject({
+      path: "/api/drafts/draft_generic-001/actions/ban_1_1/skip",
+      body: {
+        operatorId: "draft-operator",
+        confirm: true
+      }
+    });
+    expect(postCalls[0]?.body).not.toHaveProperty("heroId");
+  });
+
+  it("does not show No Ban while the current action is a pick", async () => {
+    const readyState = createStateWithDraftStatus("LIVE");
+    const draft = readyState.snapshot?.drafts["draft_generic-001"];
+
+    if (!readyState.snapshot || !draft) {
+      throw new Error("Expected draft test state.");
+    }
+
+    readyState.snapshot.drafts["draft_generic-001"] = {
+      ...draft,
+      currentPhaseIndex: 1,
+      currentPhase: {
+        id: "pick_1",
+        type: "PICK",
+        team: "RED",
+        count: 1,
+        timeSeconds: 30,
+        label: "Red pick"
+      },
+      currentActionIds: ["pick_1_1"]
+    };
+
+    const { apiClient } = createDraftApiClient(readyState);
+    const container = renderDashboard(readyState, {
+      apiClient,
+      initialSection: "draft"
+    });
+
+    await flushAsync();
+
+    const buttonLabels = Array.from(container.querySelectorAll("button")).map((button) => button.textContent?.trim());
+
+    expect(buttonLabels).not.toContain("No Ban");
+  });
+
   it("calls pause and resume only after manual clicks", async () => {
     const liveState = createStateWithDraftStatus("LIVE");
     const runningDraftClient = createDraftApiClient(liveState);
