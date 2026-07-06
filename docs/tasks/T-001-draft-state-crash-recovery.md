@@ -63,4 +63,13 @@ Do not start follow-up work after the report.
 
 ## Review checklist (planner fills after Codex run)
 
-- ☐ Diff limited to listed files · ☐ core-draft untouched · ☐ atomic write pattern present · ☐ RUNNING→PAUSED covered by test · ☐ verify passes · ☐ user manual kill-restart test passed
+- ☑ Diff limited to listed files (+3 justified wiring files: api/socket/server, flagged in report)
+- ☑ core-draft untouched (no packages/ changes)
+- ☑ atomic write present (pid+ts temp → rename, cleanup on failure)
+- ☑ LIVE/RUNNING→PAUSED covered by test; timer isRunning=false, phaseStartedAt cleared
+- ☑ all 4 revision-commit sites in api.ts schedule snapshots (verified by grep)
+- ☑ restore force-resets overlaySafety readOnly:true (guardrail cannot be smuggled via snapshot)
+- ☑ stale handling: unparseable/invalid/path-mismatch all → .stale rename, no crash (tested)
+- ☑ Codex verify suite green per report (one parallel-run flake, rerun clean)
+- ☐ user manual kill-restart test passed → then commit
+- Notes (non-blocking): (1) drafts not present at boot (ad-hoc-created) wouldn't restore — currently none exist in this system, watch if draft creation flow changes; (2) no SIGINT flush — worst case loses final ≤500ms of changes; socket-close flush covers graceful stops.
