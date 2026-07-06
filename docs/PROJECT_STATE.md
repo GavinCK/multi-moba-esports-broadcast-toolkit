@@ -1,6 +1,6 @@
 # PROJECT_STATE
 
-Updated: 2026-07-05 · by Claude (Fable 5) · session: governance setup (Day 1)
+Updated: 2026-07-07 · by Claude (Fable 5, final session) · **Succession: see `docs/handoffs/HANDOFF_2026-07-07_FABLE5_TO_OPUS48.md`**
 
 ## Baseline
 
@@ -28,13 +28,13 @@ Historical manual QA previously passed for items 2/3/5 at data level; formal sig
 
 ## Queue (strict order — one Codex task per run, stop for review after each)
 
-1. User commits governance/design docs (block prepared by Claude)
-2. Codex T-001 crash recovery → review → commit
-3. Codex T-002 no-ban path → review → commit
-4. Codex T-003 overlay visual implementation → review vs Figma frames → commit
-5. User runs T-004 prep script task (Codex writes it; user executes script) → commit
+1. ✅ Governance/design docs committed (`eebba12` + follow-ups)
+2. ✅ T-001 crash recovery — reviewed PASS, committed (`fac2015`)
+3. ✅ T-002 no-ban path — reviewed PASS, committed
+4. **▶ T-003 overlay visual implementation — IN FLIGHT in Codex at handoff.** Incoming planner: review report + diff against design spec using T-003 checklist before anything else
+5. T-004 prep script (Codex writes; user executes script on own machine) → commit
 6. Full rehearsal (operator→producer→overlay→OBS) → MVP sign-off → update this file
-7. Succession handoff to next planner model
+7. Post-MVP discussion only after item 6 (Fearless, red-first ruleset, hotkeys)
 
 ## Frozen — no new work until MVP passes
 
