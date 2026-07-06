@@ -66,4 +66,11 @@ Do not start follow-up work after the report.
 
 ## Review checklist (planner fills after Codex run)
 
-- ☐ Engine change additive only · ☐ pick-skip rejected + tested · ☐ undo round-trip tested · ☐ overlay has zero new text labels · ☐ verify passes · ☐ user manual UI check passed
+- ☑ Engine additive: skipDraftAction/resolveSkippableDraftAction/skipResolvedAction parallel to lock path; lockHero untouched (verified by read)
+- ☑ pick-skip + out-of-phase rejected without state mutation, error `draft-skip-not-ban` (tested)
+- ☑ multi-count ban phase double-skip tested; undo/redo round-trip tested
+- ☑ overlay skipped ban renders empty, zero text (isSkippedBan short-circuits label AND sublabel)
+- ☑ endpoint mirrors existing per-action route shape (approved deviation); DRAFT_ACTION_SKIPPED audit; inherits T-001 snapshot scheduling via shared commit helper
+- ☑ operator button gated (canSkipBan) + confirm dialog + busy disable
+- ☑ Codex verify suite green per report
+- ☐ user manual UI check passed → then commit
