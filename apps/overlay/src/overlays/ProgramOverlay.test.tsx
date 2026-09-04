@@ -320,7 +320,9 @@ describe("program overlay", () => {
     expect(markup).toContain('data-testid="program-graphic"');
     expect(markup).toContain('data-graphic-type="DRAFT_OVERLAY"');
     expect(markup).toContain('data-testid="draft-overlay"');
-    expect(markup).toContain("Moon Sentinel");
+    expect(markup).toContain('data-slot-state="done"');
+    expect(markup).toContain("GRAND FINAL / GAME 1");
+    expect(markup).not.toContain("Moon Sentinel");
   });
 
   it("does not render preview-only payload as program", () => {

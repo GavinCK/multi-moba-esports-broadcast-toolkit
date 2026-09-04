@@ -1,13 +1,11 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import type {
   DraftAction,
   DraftActionStatus,
   DraftActionType,
   DraftRuleset,
   Hero,
-  Sponsor,
-  Team,
-  ThemeConfig
+  Team
 } from "@mmbt/shared-types";
 
 import type {
@@ -21,29 +19,40 @@ import {
   selectMatchPresentationViewModel,
   toBrowserLocalAssetPath,
   type OverlayMatchPresentationViewModel,
-  type OverlayPresentationPlayerViewModel
+  type OverlayPresentationPlayerViewModel,
+  type OverlayPresentationSide,
+  type OverlayPresentationTeamViewModel
 } from "../state/presentationViewModel";
 import {
   formatDraftTimer,
   useDraftTimerDisplay,
+  type DraftTimerDisplay,
   type DraftTimerDisplayState
 } from "./draftTimer";
 
 type DraftOverlayState = "loading" | "missing-match" | "missing-draft" | "ready";
 type DraftSide = "BLUE" | "RED";
+type DraftSlotVisualState = "empty" | "active" | "done" | "skipped" | "hover" | "picked";
+type RoleIconKind = "top" | "jungle" | "middle" | "bottom" | "utility";
+type LocalImageLoadState = "idle" | "loaded" | "failed";
 
 interface DraftOverlaySlot {
   action: DraftAction;
   hero: Hero | null;
   label: string;
-  sublabel: string;
-  statusLabel: string;
   isActive: boolean;
-  isManualOverride: boolean;
   isNoBan: boolean;
   player: OverlayPresentationPlayerViewModel | null;
   playerLabel: string | null;
   playerRole: string | null;
+}
+
+interface VisualSlot {
+  key: string;
+  side: DraftSide;
+  index: number;
+  slot: DraftOverlaySlot | null;
+  player: OverlayPresentationPlayerViewModel | null;
 }
 
 export interface DraftOverlayViewModel {
@@ -65,41 +74,26 @@ export interface DraftOverlayViewModel {
   activeSide: DraftSide | "NONE";
   activeSideLabel: string;
   draftStatusLabel: string;
-  sponsor: Sponsor | null;
-  theme: ThemeConfig | null;
   presentation: OverlayMatchPresentationViewModel | null;
   warnings: string[];
 }
 
-const DEFAULT_THEME: ThemeConfig = {
-  id: "overlay-default",
-  name: "Overlay Default",
-  version: "0.1.0",
-  colors: {
-    background: "transparent",
-    primary: "#2563eb",
-    secondary: "#dc2626",
-    accent: "#facc15",
-    blueTeam: "#2563eb",
-    redTeam: "#dc2626",
-    textPrimary: "#f8fafc",
-    textSecondary: "#cbd5e1"
-  },
-  typography: {
-    headingFont: "Inter",
-    bodyFont: "Inter",
-    numberFont: "Roboto Mono"
-  },
-  layout: {
-    safeMarginPx: 64,
-    borderRadiusPx: 8,
-    animationSpeedMs: 250
-  },
-  assets: {}
+const BAN_SLOT_COUNT = 5;
+const PICK_SLOT_COUNT = 5;
+const ROLE_ICON_PATH_BY_KIND: Record<RoleIconKind, string> = {
+  top: "assets/role-icons/lol/position-top.svg",
+  jungle: "assets/role-icons/lol/position-jungle.svg",
+  middle: "assets/role-icons/lol/position-middle.svg",
+  bottom: "assets/role-icons/lol/position-bottom.svg",
+  utility: "assets/role-icons/lol/position-utility.svg"
 };
 
 function isDraftSide(value: unknown): value is DraftSide {
   return value === "BLUE" || value === "RED";
+}
+
+function hasText(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function formatStatus(value: string | null | undefined): string {
@@ -122,29 +116,75 @@ function formatEntityId(id: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function getTeamDisplayName(team: Team | null): string {
-  return team?.shortName || team?.name || "TBD";
+function getOverlayText(value: string | null | undefined): string {
+  return hasText(value) ? value.trim().toUpperCase() : "";
 }
 
-function getTeamInitials(team: Team | null, fallback: string): string {
-  const source = team?.shortName || team?.name || fallback;
-  const initials = source
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0))
-    .join("")
-    .slice(0, 3)
-    .toUpperCase();
+function getImageFallbackText(hero: Hero | null): string {
+  if (!hero) {
+    return "";
+  }
 
-  return initials || fallback;
+  const source = hero.displayName || hero.id;
+  const compact = source.replace(/[^a-z0-9]/gi, "");
+
+  return (compact || source).slice(0, 2).toUpperCase();
 }
 
-function resolveHeroIcon(hero: Hero | null): string | null {
+function getHeroAssetId(hero: Hero): string {
+  const metadataId = hero.metadata?.dataDragonId;
+
+  return typeof metadataId === "string" && metadataId.length > 0 ? metadataId : hero.id;
+}
+
+function resolveHeroSquare(hero: Hero | null): string | null {
   return toBrowserLocalAssetPath(hero?.squareUrl ?? hero?.iconUrl);
 }
 
-function resolveTeamLogo(team: Team | null): string | null {
-  return toBrowserLocalAssetPath(team?.logoUrl);
+function resolveHeroSplash(hero: Hero | null): string | null {
+  const configuredSplash = toBrowserLocalAssetPath(hero?.splashUrl);
+
+  if (configuredSplash || !hero || hero.gameCode !== "lol") {
+    return configuredSplash;
+  }
+
+  return `/assets/hero-splashes/lol/${encodeURIComponent(getHeroAssetId(hero))}.jpg`;
+}
+
+function resolveRoleIconKind(role: string | null | undefined): RoleIconKind | null {
+  if (!role) {
+    return null;
+  }
+
+  const normalized = role.trim().toLowerCase().replace(/[^a-z]/g, "");
+
+  if (normalized === "top") {
+    return "top";
+  }
+
+  if (normalized === "jungle" || normalized === "jg" || normalized === "jgl") {
+    return "jungle";
+  }
+
+  if (normalized === "middle" || normalized === "mid") {
+    return "middle";
+  }
+
+  if (normalized === "bottom" || normalized === "bot" || normalized === "adc") {
+    return "bottom";
+  }
+
+  if (normalized === "support" || normalized === "sup" || normalized === "utility") {
+    return "utility";
+  }
+
+  return null;
+}
+
+function resolveRoleIconUrl(role: string | null | undefined): string | null {
+  const kind = resolveRoleIconKind(role);
+
+  return kind ? toBrowserLocalAssetPath(ROLE_ICON_PATH_BY_KIND[kind]) : null;
 }
 
 function findCurrentGame(state: OverlayRuntimeState, match: OverlayMatch): OverlayGame | null {
@@ -182,7 +222,9 @@ function findDraftForMatch(
   match: OverlayMatch,
   game: OverlayGame | null
 ): OverlayDraftSummary | null {
-  const draftId = game?.draftId ?? (state.production.activeMatchId === match.id ? state.production.activeDraftId : null);
+  const draftId =
+    game?.draftId ??
+    (state.production.activeMatchId === match.id ? state.production.activeDraftId : null);
 
   if (draftId && state.drafts[draftId]) {
     return state.drafts[draftId];
@@ -231,43 +273,6 @@ function findHero(state: OverlayRuntimeState, heroId: string | null): Hero | nul
   }
 
   return null;
-}
-
-function findTheme(
-  state: OverlayRuntimeState,
-  match: OverlayMatch,
-  game: OverlayGame | null
-): ThemeConfig | null {
-  const themeId = game?.themeId ?? match.themeId;
-
-  if (themeId) {
-    const theme = state.themes.find((candidate) => candidate.id === themeId);
-
-    if (theme) {
-      return theme;
-    }
-  }
-
-  return state.themes[0] ?? null;
-}
-
-function findSponsor(state: OverlayRuntimeState, match: OverlayMatch): Sponsor | null {
-  const linkedSponsorIds = new Set(match.sponsorSlotIds ?? []);
-  const linkedSponsor = state.sponsors.find(
-    (sponsor) =>
-      linkedSponsorIds.has(sponsor.id) &&
-      (sponsor.slots.includes("DRAFT") || sponsor.slots.includes("PRESENTED_BY"))
-  );
-
-  if (linkedSponsor) {
-    return linkedSponsor;
-  }
-
-  return (
-    state.sponsors.find(
-      (sponsor) => sponsor.slots.includes("DRAFT") || sponsor.slots.includes("PRESENTED_BY")
-    ) ?? null
-  );
 }
 
 function getActionId(phaseId: string, slotIndex: number): string {
@@ -326,46 +331,6 @@ function getDraftActions(
     : createSyntheticActions(draft, ruleset, timestamp);
 }
 
-function getSlotStatusLabel(action: DraftAction): string {
-  if (isSkippedBan(action)) {
-    return "";
-  }
-
-  switch (action.status) {
-    case "LOCKED":
-      return "Locked";
-    case "HOVER":
-      return "Hover";
-    case "SKIPPED":
-      return "Skipped";
-    case "CANCELLED":
-      return "Cancelled";
-    case "PENDING":
-    default:
-      return "Pending";
-  }
-}
-
-function getSlotSublabel(action: DraftAction): string {
-  if (isSkippedBan(action)) {
-    return "";
-  }
-
-  if (action.status === "SKIPPED") {
-    return "Manual skip";
-  }
-
-  if (action.status === "CANCELLED") {
-    return "Cancelled";
-  }
-
-  return `${formatStatus(action.type)} ${action.slotIndex + 1}`;
-}
-
-function isManualOverrideAction(action: DraftAction): boolean {
-  return action.metadata?.manualOverride === true;
-}
-
 function isSkippedBan(action: DraftAction): boolean {
   return action.type === "BAN" && action.status === "SKIPPED";
 }
@@ -386,10 +351,7 @@ function buildSlots(
       action,
       hero,
       label: heroLabel,
-      sublabel: getSlotSublabel(action),
-      statusLabel: getSlotStatusLabel(action),
       isActive: draft.currentActionIds.includes(action.id),
-      isManualOverride: isManualOverrideAction(action),
       isNoBan,
       player: null,
       playerLabel: null,
@@ -487,7 +449,10 @@ function getPhaseLabel(draft: OverlayDraftSummary | null, ruleset: DraftRuleset 
   return phase?.label ?? phase?.id ?? "Draft complete";
 }
 
-function getActiveSide(draft: OverlayDraftSummary | null, ruleset: DraftRuleset | null): DraftSide | "NONE" {
+function getActiveSide(
+  draft: OverlayDraftSummary | null,
+  ruleset: DraftRuleset | null
+): DraftSide | "NONE" {
   if (!draft || draft.status === "COMPLETE") {
     return "NONE";
   }
@@ -544,8 +509,6 @@ export function selectDraftOverlayViewModel(
       activeSide: "NONE",
       activeSideLabel: "Standby",
       draftStatusLabel: "Standby",
-      sponsor: null,
-      theme: null,
       presentation: null,
       warnings: ["No runtime state snapshot has been received."]
     };
@@ -573,8 +536,6 @@ export function selectDraftOverlayViewModel(
       activeSide: "NONE",
       activeSideLabel: "Standby",
       draftStatusLabel: "Standby",
-      sponsor: null,
-      theme: null,
       presentation: null,
       warnings: ["The requested match ID was not found in public runtime state."]
     };
@@ -585,8 +546,6 @@ export function selectDraftOverlayViewModel(
   const ruleset = findRuleset(snapshot, draft, game);
   const blueTeam = findTeam(snapshot, game?.blueTeamId ?? match.teams.blue);
   const redTeam = findTeam(snapshot, game?.redTeamId ?? match.teams.red);
-  const theme = findTheme(snapshot, match, game);
-  const sponsor = findSponsor(snapshot, match);
   const presentation = selectMatchPresentationViewModel(snapshot, match);
   const warnings: string[] = [];
 
@@ -636,115 +595,456 @@ export function selectDraftOverlayViewModel(
     activeSide,
     activeSideLabel: activeSide === "NONE" ? "Standby" : formatStatus(activeSide),
     draftStatusLabel: draft ? formatStatus(draft.status) : "Draft Standby",
-    sponsor,
-    theme,
     presentation,
     warnings
   };
 }
 
-function TeamLogo({ team, fallback }: { team: Team | null; fallback: string }) {
-  const logo = resolveTeamLogo(team);
-  const initials = getTeamInitials(team, fallback);
+export function getDraftTimerBarScale(
+  remainingSeconds: number | null | undefined,
+  originalSeconds: number | null | undefined
+): number {
+  const remaining = Number(remainingSeconds);
+  const original = Number(originalSeconds);
 
+  if (!Number.isFinite(remaining) || !Number.isFinite(original) || original <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(1, remaining / original));
+}
+
+function isTimerBarVisible(
+  draft: OverlayDraftSummary | null,
+  timerDisplay: DraftTimerDisplay
+): boolean {
   return (
-    <div className="draft-team-logo" data-team-logo={logo ? "asset" : "fallback"}>
-      {logo ? <img src={logo} alt="" aria-hidden="true" /> : null}
-      <span>{initials}</span>
-    </div>
+    draft !== null &&
+    draft.status !== "COMPLETE" &&
+    draft.timer.isRunning &&
+    (timerDisplay.timerState === "running" || timerDisplay.timerState === "expired")
   );
 }
 
-function HeroIcon({ slot }: { slot: DraftOverlaySlot }) {
+function getBanVisualState(slot: DraftOverlaySlot | null): DraftSlotVisualState {
+  if (!slot) {
+    return "empty";
+  }
+
   if (slot.isNoBan) {
-    return <div className="draft-slot__icon draft-slot__icon--empty" data-hero-icon="empty" aria-hidden="true" />;
+    return "skipped";
   }
 
-  const icon = resolveHeroIcon(slot.hero);
-  const initials = slot.action.heroId ? formatEntityId(slot.action.heroId).slice(0, 2).toUpperCase() : "--";
+  if (slot.action.status === "LOCKED") {
+    return "done";
+  }
+
+  return slot.isActive ? "active" : "empty";
+}
+
+function getPickVisualState(slot: DraftOverlaySlot | null): DraftSlotVisualState {
+  if (!slot) {
+    return "empty";
+  }
+
+  if (slot.action.status === "LOCKED") {
+    return "picked";
+  }
+
+  if (slot.action.status === "HOVER") {
+    return "hover";
+  }
+
+  return "empty";
+}
+
+function getVisualSlots(
+  slots: DraftOverlaySlot[],
+  side: DraftSide,
+  count: number,
+  players: OverlayPresentationPlayerViewModel[] = []
+): VisualSlot[] {
+  return Array.from({ length: count }, (_, index) => {
+    const slot = slots[index] ?? null;
+
+    return {
+      key: slot?.action.id ?? `${side.toLowerCase()}-placeholder-${index}`,
+      side,
+      index,
+      slot,
+      player: slot?.player ?? players[index] ?? null
+    };
+  });
+}
+
+function LocalAssetImage({
+  src,
+  className,
+  onLoadStateChange
+}: {
+  src: string | null;
+  className: string;
+  onLoadStateChange?: (state: LocalImageLoadState) => void;
+}) {
+  const [loadState, setLoadState] = useState<LocalImageLoadState>("idle");
+
+  if (!src) {
+    return null;
+  }
+
+  const updateLoadState = (state: LocalImageLoadState) => {
+    setLoadState(state);
+    onLoadStateChange?.(state);
+  };
 
   return (
-    <div className="draft-slot__icon" data-hero-icon={icon ? "asset" : "fallback"}>
-      {icon ? <img src={icon} alt="" aria-hidden="true" /> : null}
-      <span>{initials}</span>
-    </div>
+    <img
+      className={className}
+      src={src}
+      alt=""
+      aria-hidden="true"
+      data-load-state={loadState}
+      onLoad={() => updateLoadState("loaded")}
+      onError={() => updateLoadState("failed")}
+    />
   );
 }
 
-function SponsorMark({ sponsor }: { sponsor: Sponsor | null }) {
-  if (!sponsor) {
-    return <div className="draft-sponsor draft-sponsor--empty">Draft Sponsor</div>;
-  }
-
-  const logo = toBrowserLocalAssetPath(sponsor.logoUrl);
+function HeroSquare({ hero, className = "" }: { hero: Hero | null; className?: string }) {
+  const [loadState, setLoadState] = useState<LocalImageLoadState>("idle");
+  const squareUrl = resolveHeroSquare(hero);
 
   return (
-    <div className="draft-sponsor" data-sponsor-id={sponsor.id}>
-      <span>Presented by</span>
-      {logo ? <img src={logo} alt="" aria-hidden="true" /> : null}
-      <strong>{sponsor.name}</strong>
-    </div>
+    <span
+      className={`draft-hero-square ${className}`.trim()}
+      data-image-state={loadState}
+      data-has-asset={squareUrl ? "true" : "false"}
+      aria-hidden="true"
+    >
+      <LocalAssetImage
+        src={squareUrl}
+        className="draft-hero-square__image"
+        onLoadStateChange={setLoadState}
+      />
+      <span className="draft-hero-square__fallback">{getImageFallbackText(hero)}</span>
+    </span>
   );
 }
 
-function TeamHeader({
-  side,
+function NeutralCrest() {
+  return (
+    <svg className="draft-neutral-crest" viewBox="0 0 54 54" aria-hidden="true">
+      <path d="M27 5 44 11v13c0 11-6.8 19.3-17 24-10.2-4.7-17-13-17-24V11L27 5Z" />
+      <path d="M27 13 37 17v8c0 6.5-3.8 11.7-10 15-6.2-3.3-10-8.5-10-15v-8l10-4Z" />
+    </svg>
+  );
+}
+
+function TeamLogo({
   team,
-  isActive
+  side
+}: {
+  team: OverlayPresentationTeamViewModel | null;
+  side: OverlayPresentationSide;
+}) {
+  const [loadState, setLoadState] = useState<LocalImageLoadState>("idle");
+  const logoUrl = team?.localLogoUrl ?? null;
+
+  return (
+    <div
+      className={`draft-center-logo draft-center-logo--${side.toLowerCase()}`}
+      data-logo-state={loadState}
+      data-logo-source={logoUrl ? "asset" : "fallback"}
+    >
+      <LocalAssetImage
+        src={logoUrl}
+        className="draft-center-logo__image"
+        onLoadStateChange={setLoadState}
+      />
+      <NeutralCrest />
+    </div>
+  );
+}
+
+function RoleFallbackGlyph({ kind }: { kind: RoleIconKind | null }) {
+  const glyphKind = kind ?? "utility";
+
+  if (glyphKind === "top") {
+    return (
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <path className="draft-role-glyph__bright" d="M18 4 30 16H6L18 4Z" />
+        <path className="draft-role-glyph__dim" d="M10 19h16v12H10V19Z" />
+      </svg>
+    );
+  }
+
+  if (glyphKind === "jungle") {
+    return (
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <path className="draft-role-glyph__bright" d="M18 4c7 5 10 10 10 16a10 10 0 0 1-20 0C8 14 11 9 18 4Z" />
+        <path className="draft-role-glyph__dim" d="M18 12v19M11 22h14" />
+      </svg>
+    );
+  }
+
+  if (glyphKind === "middle") {
+    return (
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <path className="draft-role-glyph__bright" d="M7 29 29 7" />
+        <path className="draft-role-glyph__dim" d="M8 8h12M16 28h12" />
+      </svg>
+    );
+  }
+
+  if (glyphKind === "bottom") {
+    return (
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <path className="draft-role-glyph__bright" d="M8 24 24 8l4 4-16 16H8v-4Z" />
+        <path className="draft-role-glyph__dim" d="m22 10 4 4M8 28h12" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 36 36" aria-hidden="true">
+      <path className="draft-role-glyph__bright" d="M18 5 28 15 18 31 8 15 18 5Z" />
+      <path className="draft-role-glyph__dim" d="M13 15h10M18 5v26" />
+    </svg>
+  );
+}
+
+function RoleIcon({ role }: { role: string | null | undefined }) {
+  const [loadState, setLoadState] = useState<LocalImageLoadState>("idle");
+  const kind = resolveRoleIconKind(role);
+  const roleIconUrl = resolveRoleIconUrl(role);
+
+  return (
+    <span
+      className="draft-role-icon"
+      data-role-kind={kind ?? "fallback"}
+      data-image-state={loadState}
+      aria-hidden="true"
+    >
+      <LocalAssetImage
+        src={roleIconUrl}
+        className="draft-role-icon__image"
+        onLoadStateChange={setLoadState}
+      />
+      <span className="draft-role-icon__fallback">
+        <RoleFallbackGlyph kind={kind} />
+      </span>
+    </span>
+  );
+}
+
+function DraftHeroBackdrop({
+  slot,
+  side
+}: {
+  slot: DraftOverlaySlot | null;
+  side: DraftSide;
+}) {
+  const [splashState, setSplashState] = useState<LocalImageLoadState>("idle");
+  const hero = slot?.hero ?? null;
+  const splashUrl = resolveHeroSplash(hero);
+  const shouldShowFallback = splashState !== "loaded";
+
+  return (
+    <span
+      className="draft-pick-art"
+      data-side={side.toLowerCase()}
+      data-splash-state={splashState}
+      aria-hidden="true"
+    >
+      <LocalAssetImage
+        src={splashUrl}
+        className="draft-pick-art__splash"
+        onLoadStateChange={setSplashState}
+      />
+      {shouldShowFallback ? (
+        <span className="draft-pick-art__fallback">
+          <HeroSquare hero={hero} className="draft-pick-art__square" />
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function getPlayerName(visualSlot: VisualSlot): string {
+  return getOverlayText(visualSlot.slot?.playerLabel ?? visualSlot.player?.label ?? null);
+}
+
+function BanSlot({ visualSlot }: { visualSlot: VisualSlot }) {
+  const visualState = getBanVisualState(visualSlot.slot);
+  const slot = visualSlot.slot;
+  const hasHero = Boolean(slot?.hero);
+  const side = visualSlot.side;
+
+  return (
+    <span
+      className={`draft-ban-slot draft-ban-slot--${side.toLowerCase()}`}
+      data-testid={slot ? `draft-slot-${slot.action.id}` : undefined}
+      data-slot-kind="ban"
+      data-slot-state={visualState}
+      data-side={side.toLowerCase()}
+      data-active-slot={slot?.isActive ? "true" : "false"}
+      data-hero-source={hasHero ? "hero" : "none"}
+      aria-hidden="true"
+    >
+      {hasHero ? <HeroSquare hero={slot?.hero ?? null} className="draft-ban-slot__hero" /> : null}
+      {visualState === "done" ? <span className="draft-ban-slot__strike" /> : null}
+    </span>
+  );
+}
+
+function PickSlot({ visualSlot }: { visualSlot: VisualSlot }) {
+  const visualState = getPickVisualState(visualSlot.slot);
+  const playerName = getPlayerName(visualSlot);
+  const role = visualSlot.slot?.playerRole ?? visualSlot.player?.role ?? null;
+  const side = visualSlot.side;
+
+  return (
+    <article
+      className={`draft-pick-slot draft-pick-slot--${side.toLowerCase()}`}
+      data-testid={visualSlot.slot ? `draft-slot-${visualSlot.slot.action.id}` : undefined}
+      data-slot-kind="pick"
+      data-slot-state={visualState}
+      data-side={side.toLowerCase()}
+      data-player-role={resolveRoleIconKind(role) ?? "fallback"}
+      aria-hidden="true"
+    >
+      {visualState === "empty" ? (
+        <RoleIcon role={role} />
+      ) : (
+        <DraftHeroBackdrop slot={visualSlot.slot} side={side} />
+      )}
+      {visualState === "picked" ? <span className="draft-pick-slot__name-band" /> : null}
+      {playerName ? <span className="draft-player-name">{playerName}</span> : null}
+    </article>
+  );
+}
+
+function BanStrip({
+  side,
+  slots
 }: {
   side: DraftSide;
-  team: Team | null;
-  isActive: boolean;
+  slots: DraftOverlaySlot[];
 }) {
-  const displayName = getTeamDisplayName(team);
-  const contextLabel = team?.name && team.name !== displayName ? team.name : `${formatStatus(side)} Side`;
+  const visualSlots = getVisualSlots(slots, side, BAN_SLOT_COUNT);
 
   return (
-    <header className={`draft-team draft-team--${side.toLowerCase()}`} data-active-side={isActive ? side : undefined}>
-      <TeamLogo team={team} fallback={side === "BLUE" ? "BLU" : "RED"} />
-      <div>
-        <span>{contextLabel}</span>
-        <strong>{displayName}</strong>
-      </div>
-    </header>
+    <div className={`draft-ban-strip draft-ban-strip--${side.toLowerCase()}`} aria-hidden="true">
+      {visualSlots.map((visualSlot) => (
+        <BanSlot key={visualSlot.key} visualSlot={visualSlot} />
+      ))}
+    </div>
   );
 }
 
-function SlotList({
-  title,
-  slots,
-  variant
-}: {
-  title: string;
-  slots: DraftOverlaySlot[];
-  variant: "ban" | "pick";
-}) {
+function SlotDividers() {
   return (
-    <section className={`draft-slots draft-slots--${variant}`} aria-label={title}>
-      <h2>{title}</h2>
-      <div className="draft-slots__grid">
-        {slots.map((slot) => (
-          <article
-            key={slot.action.id}
-            className={`draft-slot draft-slot--${slot.action.status.toLowerCase()} draft-slot--${variant}`}
-            data-testid={`draft-slot-${slot.action.id}`}
-            data-action-type={slot.action.type}
-            data-team-side={slot.action.team}
-            data-slot-status={slot.action.status}
-            data-active-slot={slot.isActive ? "true" : "false"}
-          >
-            <HeroIcon slot={slot} />
-            {slot.isNoBan ? null : (
-              <div className="draft-slot__copy">
-                <span>{slot.statusLabel}</span>
-                <strong>{slot.label}</strong>
-                <small>{slot.isManualOverride ? "Manual override" : slot.sublabel}</small>
-              </div>
-            )}
-          </article>
-        ))}
+    <>
+      {[1, 2, 3, 4].map((index) => (
+        <span
+          key={index}
+          className="draft-slot-divider"
+          style={{ left: `${index * 20}%` }}
+          aria-hidden="true"
+        />
+      ))}
+    </>
+  );
+}
+
+function PickZone({
+  side,
+  slots,
+  players
+}: {
+  side: DraftSide;
+  slots: DraftOverlaySlot[];
+  players: OverlayPresentationPlayerViewModel[];
+}) {
+  const visualSlots = getVisualSlots(slots, side, PICK_SLOT_COUNT, players);
+
+  return (
+    <div className={`draft-pick-zone draft-pick-zone--${side.toLowerCase()}`}>
+      <SlotDividers />
+      {visualSlots.map((visualSlot) => (
+        <PickSlot key={visualSlot.key} visualSlot={visualSlot} />
+      ))}
+    </div>
+  );
+}
+
+function FirstPickTag({ side }: { side: OverlayPresentationSide | null }) {
+  if (!side) {
+    return null;
+  }
+
+  return (
+    <div className={`draft-first-pick draft-first-pick--${side.toLowerCase()}`}>
+      {side === "BLUE" ? "\u2190 1ST PICK" : "1ST PICK \u2192"}
+    </div>
+  );
+}
+
+function CenterCaret() {
+  return <span className="draft-center-caret" aria-hidden="true" />;
+}
+
+function CenterBlock({ presentation }: { presentation: OverlayMatchPresentationViewModel | null }) {
+  const matchLabel = presentation
+    ? `${getOverlayText(presentation.matchLabel)} / GAME ${presentation.gameNumber}`
+    : "";
+  const patchLabel = getOverlayText(presentation?.patchLabel ?? null);
+
+  return (
+    <div className="draft-center-block">
+      <div className="draft-match-label">{matchLabel}</div>
+      <FirstPickTag side={presentation?.firstPickSide ?? null} />
+      <TeamLogo team={presentation?.teams.BLUE ?? null} side="BLUE" />
+      <TeamLogo team={presentation?.teams.RED ?? null} side="RED" />
+      <CenterCaret />
+      <div className="draft-center-score draft-center-score--blue">
+        {presentation?.scoreBySide.BLUE ?? 0}
       </div>
-    </section>
+      <div className="draft-center-score draft-center-score--red">
+        {presentation?.scoreBySide.RED ?? 0}
+      </div>
+      {patchLabel ? <div className="draft-patch-label">{patchLabel}</div> : null}
+    </div>
+  );
+}
+
+function TimerBar({
+  draft,
+  timerDisplay
+}: {
+  draft: OverlayDraftSummary | null;
+  timerDisplay: DraftTimerDisplay;
+}) {
+  if (!isTimerBarVisible(draft, timerDisplay)) {
+    return null;
+  }
+
+  const scale = getDraftTimerBarScale(
+    timerDisplay.remainingSeconds,
+    draft?.timer.originalSeconds
+  );
+  const style = { width: `${scale * 100}%` } satisfies CSSProperties;
+
+  return (
+    <div
+      className="draft-turn-timer"
+      data-testid="draft-turn-timer"
+      data-timer-state={timerDisplay.timerState}
+      data-timer-scale={scale.toFixed(3)}
+      aria-hidden="true"
+    >
+      <span className="draft-turn-timer__fill" style={style} />
+    </div>
   );
 }
 
@@ -760,7 +1060,7 @@ function Standby({
   return (
     <section className="draft-overlay draft-overlay--standby" aria-live="polite">
       <div className="draft-standby">
-        <p>Draft Overlay</p>
+        <p>DRAFT OVERLAY</p>
         <h1>{title}</h1>
         <span>{subtitle}</span>
         {children}
@@ -864,19 +1164,6 @@ export function DraftOverlay({
 }) {
   const viewModel = selectDraftOverlayViewModel(clientState, matchId);
   const timerDisplay = useDraftTimerDisplay(viewModel.draft?.status, viewModel.draft?.timer);
-  const theme = viewModel.theme ?? DEFAULT_THEME;
-  const style = {
-    "--draft-blue": viewModel.blueTeam?.primaryColor ?? theme.colors.blueTeam,
-    "--draft-red": viewModel.redTeam?.primaryColor ?? theme.colors.redTeam,
-    "--draft-accent": theme.colors.accent,
-    "--draft-text": theme.colors.textPrimary,
-    "--draft-muted": theme.colors.textSecondary,
-    "--draft-radius": `${theme.layout.borderRadiusPx}px`,
-    "--draft-safe": `${theme.layout.safeMarginPx}px`,
-    "--draft-font-heading": theme.typography.headingFont,
-    "--draft-font-body": theme.typography.bodyFont,
-    "--draft-font-number": theme.typography.numberFont ?? theme.typography.bodyFont
-  } as CSSProperties;
 
   if (viewModel.state === "loading") {
     return (
@@ -896,56 +1183,53 @@ export function DraftOverlay({
     );
   }
 
-  const isComplete = viewModel.draft?.status === "COMPLETE";
+  if (viewModel.state === "missing-draft") {
+    return (
+      <>
+        <section
+          className="draft-overlay draft-overlay--standby"
+          data-testid="draft-overlay"
+          data-draft-status="missing"
+          aria-live="polite"
+        >
+          <div className="draft-standby">
+            <p>DRAFT STANDBY</p>
+            <h1>Draft state unavailable</h1>
+            <span>No draft will be created from this overlay.</span>
+          </div>
+        </section>
+        {debug ? <DraftDiagnostics viewModel={viewModel} /> : null}
+      </>
+    );
+  }
+
+  const presentation = viewModel.presentation;
 
   return (
     <section
-      className={`draft-overlay draft-overlay--${isComplete ? "complete" : "live"} draft-overlay--${viewModel.state}`}
-      style={style}
+      className={`draft-overlay draft-overlay--${viewModel.draft?.status === "COMPLETE" ? "complete" : "live"}`}
       data-testid="draft-overlay"
-      data-draft-status={viewModel.draft?.status ?? "MISSING"}
-      data-active-side={viewModel.activeSide}
+      data-draft-status={viewModel.draft?.status.toLowerCase() ?? "missing"}
+      data-active-side={viewModel.activeSide.toLowerCase()}
       aria-label="Draft overlay"
     >
-      <div className="draft-overlay__top">
-        <TeamHeader side="BLUE" team={viewModel.blueTeam} isActive={viewModel.activeSide === "BLUE"} />
-        <div className="draft-center">
-          <SponsorMark sponsor={viewModel.sponsor} />
-          <div className="draft-timer" data-timer-state={timerDisplay.timerState}>
-            <span>{timerDisplay.timerState === "expired" ? "Expired" : viewModel.draftStatusLabel}</span>
-            <strong>{timerDisplay.timerText}</strong>
-          </div>
-          <div className="draft-phase">
-            <span>{viewModel.phaseLabel}</span>
-            <strong>Active Side: {viewModel.activeSideLabel}</strong>
-          </div>
-        </div>
-        <TeamHeader side="RED" team={viewModel.redTeam} isActive={viewModel.activeSide === "RED"} />
-      </div>
+      <BanStrip side="BLUE" slots={viewModel.blueBans} />
+      <BanStrip side="RED" slots={viewModel.redBans} />
+      <TimerBar draft={viewModel.draft} timerDisplay={timerDisplay} />
 
-      {viewModel.state === "missing-draft" ? (
-        <div className="draft-missing-state">
-          <p>Draft Standby</p>
-          <strong>Draft state unavailable</strong>
-          <span>Teams are loaded. No draft will be created from this overlay.</span>
-        </div>
-      ) : (
-        <div className="draft-overlay__body">
-          <div className="draft-side draft-side--blue">
-            <SlotList title="Blue Bans" slots={viewModel.blueBans} variant="ban" />
-            <SlotList title="Blue Picks" slots={viewModel.bluePicks} variant="pick" />
-          </div>
-          <div className="draft-final-status">
-            <span>{isComplete ? "Draft Complete" : "Draft Status"}</span>
-            <strong>{viewModel.draftStatusLabel}</strong>
-            <small>{viewModel.match?.title ?? "Match"}</small>
-          </div>
-          <div className="draft-side draft-side--red">
-            <SlotList title="Red Bans" slots={viewModel.redBans} variant="ban" />
-            <SlotList title="Red Picks" slots={viewModel.redPicks} variant="pick" />
-          </div>
-        </div>
-      )}
+      <div className="draft-bottom-rail">
+        <PickZone
+          side="BLUE"
+          slots={viewModel.bluePicks}
+          players={presentation?.teams.BLUE.players ?? []}
+        />
+        <CenterBlock presentation={presentation} />
+        <PickZone
+          side="RED"
+          slots={viewModel.redPicks}
+          players={presentation?.teams.RED.players ?? []}
+        />
+      </div>
 
       {debug ? <DraftDiagnostics viewModel={viewModel} /> : null}
     </section>

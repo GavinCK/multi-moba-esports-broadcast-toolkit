@@ -1,13 +1,16 @@
 # PROJECT_STATE
 
-Updated: 2026-07-07 · by Claude (Fable 5, final session) · **Succession: see `docs/handoffs/HANDOFF_2026-07-07_FABLE5_TO_OPUS48.md`**
+Updated: 2026-09-04 · temporary archival consolidation
+
+> **Authoritative resume record:** read root [`HANDOFF.md`](../HANDOFF.md) before using this planning index. The 2026-07-07 succession handoff remains historical context only.
 
 ## Baseline
 
-- HEAD: `eebba12` docs: add governance layer (CLAUDE.md, PROJECT_STATE, ADRs, task specs); archive legacy handoffs
-- origin/main: `1d3bde8` (push pending, user's discretion)
-- Working tree: clean (user-verified in PowerShell, 2026-07-05, post ADR-006 recovery)
-- `pnpm verify` on current baseline: ☐ pending user confirmation (docs-only commits since last green run)
+- Canonical branch: `main`; pre-archive base: `b9204a316ee95035a82d5cc9a26f8442f982d52b`.
+- Canonical archived HEAD: the `origin/main` commit containing root `HANDOFF.md`; resolve with `git rev-parse origin/main`.
+- Remote before archival push: `origin/main` at `1d3bde8`; local base was eight commits ahead and required no rebase/merge.
+- Working tree target after archival consolidation: clean; T-003 code and archival docs intentionally committed, with caches/build output/runtime state ignored.
+- Validation on 2026-09-04: `pnpm build` passed; build-first `pnpm verify` passed lint, typecheck, 320 tests, and build; server health smoke passed on port 3100. Fresh one-shot `pnpm verify` still needs a prior build. See root `HANDOFF.md` for exact evidence and risks.
 - 2026-06-04 file-corruption incident: repaired and hash-verified (ADR-002); root cause now attributed to AI-mount writes (ADR-006)
 
 ## Mission: LoL-first MVP — acceptance checklist
@@ -24,14 +27,14 @@ Historical manual QA previously passed for items 2/3/5 at data level; formal sig
 ## Tracks
 
 - **A. Overlay design — APPROVED (round 3, 2026-07-05).** Figma `02_Design` (3 frames + ICON_WORKBENCH, node 41:2) locked into `docs/design/LOL_DRAFT_OVERLAY_APPROVED_DESIGN_SPEC.md` (binding for implementation). Asset sourcing: official role SVGs + splashes arrive via T-004 user-machine script; overlay must run on fallbacks until then.
-- **B. Logic tasks (Codex, parallel-safe)** — T-001 crash recovery: spec ready, not run. T-002 no-ban path: spec ready, not run.
+- **B. Logic tasks** — T-001 crash recovery and T-002 no-ban path are implemented and automated-test green. Their manual kill/restart and UI checks remain unsigned.
 
 ## Queue (strict order — one Codex task per run, stop for review after each)
 
 1. ✅ Governance/design docs committed (`eebba12` + follow-ups)
 2. ✅ T-001 crash recovery — reviewed PASS, committed (`fac2015`)
 3. ✅ T-002 no-ban path — reviewed PASS, committed
-4. **▶ T-003 overlay visual implementation — IN FLIGHT in Codex at handoff.** Incoming planner: review report + diff against design spec using T-003 checklist before anything else
+4. **▶ T-003 overlay visual implementation — CODE PRESERVED, AUTOMATED CHECKS GREEN, HUMAN VISUAL REVIEW PENDING.** Review the exact spec/code and asset-routing risks in root `HANDOFF.md` before acceptance.
 5. T-004 prep script (Codex writes; user executes script on own machine) → commit
 6. Full rehearsal (operator→producer→overlay→OBS) → MVP sign-off → update this file
 7. Post-MVP discussion only after item 6 (Fearless, red-first ruleset, hotkeys)

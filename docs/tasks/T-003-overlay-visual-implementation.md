@@ -1,6 +1,6 @@
 # T-003: Draft overlay visual implementation (approved design)
 
-Status: SPEC READY — blocked on nothing; run after T-001/T-002 or independently · Owner: Codex · Reviewer: planner + user
+Status: IMPLEMENTATION PRESERVED 2026-09-04 — automated checks green; visual/user acceptance pending · Owner: Codex · Reviewer: planner + user
 
 ## Why
 
@@ -66,4 +66,12 @@ Do not start follow-up work after the report.
 
 ## Review checklist (planner fills after Codex run)
 
-- ☐ Diff limited to overlay app · ☐ no server/core changes · ☐ banned strings absent (grep PENDING/PICK 1/BLUE BAN) · ☐ fallbacks tested · ☐ transparent bg + no scrollbars · ☐ user visual check vs Figma frames · ☐ verify passes
+- ☑ Diff limited to overlay app (DraftOverlay implementation/tests/CSS plus ProgramOverlay integration test)
+- ☑ No server/core changes
+- ☑ Banned on-air strings absent from the normal rendered route (component assertions); debug-only phase data remains allowed
+- ☑ Missing splash/role/logo fallback markup covered by component tests
+- ☐ Browser asset routing verified (`apps/overlay/vite.config.ts` does not currently proxy `/assets`; see root `HANDOFF.md`)
+- ☐ Transparent background + no scrollbars verified in a real 1920×1080 browser/OBS surface
+- ☐ Exact spec differences resolved (separator, first-pick glyphs, and player/side ordering called out in root `HANDOFF.md`)
+- ☐ User visual check vs Figma F1/F2/F3 frames
+- ☑ Build-first `pnpm verify` passes (lint, typecheck, 320 tests, build; 2026-09-04)

@@ -17,7 +17,7 @@ import type { OverlayClientState, OverlayDraftSummary, OverlayRuntimeState } fro
 import { OverlayRouteView } from "../routes/OverlayRouteView";
 import { parseOverlayRoute } from "../routes/route";
 import { overlayReducer } from "../state/overlayState";
-import { selectDraftOverlayViewModel } from "./DraftOverlay";
+import { getDraftTimerBarScale, selectDraftOverlayViewModel } from "./DraftOverlay";
 
 const timestamp = "2026-06-02T06:00:00.000Z";
 
@@ -440,12 +440,15 @@ describe("draft overlay", () => {
     const markup = renderDraft();
 
     expect(markup).toContain('data-testid="draft-overlay"');
-    expect(markup).toContain("Grand Final");
-    expect(markup).toContain("00:24");
-    expect(markup).toContain("Red Ban 1");
-    expect(markup).toContain("Active Side: Red");
-    expect(markup).toContain("Live");
-    expect(markup).toContain("Local LAN Studios");
+    expect(markup).toContain("SHOWMATCH FINALS / GAME 2");
+    expect(markup).toContain("PATCH 26.10");
+    expect(markup).toContain("BLUEMID");
+    expect(markup).toContain("REDTOP");
+    expect(markup).toContain('data-testid="draft-turn-timer"');
+    expect(markup).toContain('data-active-side="red"');
+    expect(markup).not.toContain("Red Ban 1");
+    expect(markup).not.toContain("Active Side");
+    expect(markup).not.toContain("Local LAN Studios");
   });
 
   it("renders the locally derived running timer between server snapshots", () => {
@@ -454,16 +457,78 @@ describe("draft overlay", () => {
     const markup = renderDraft();
 
     expect(markup).toContain('data-timer-state="running"');
-    expect(markup).toContain("00:20");
+    expect(markup).toContain('data-timer-scale="0.667"');
   });
 
-  it("renders blue and red team names with team logo fallback", () => {
+  it("calculates timer bar width from the current turn timer", () => {
+    expect(getDraftTimerBarScale(24, 30)).toBe(0.8);
+    expect(getDraftTimerBarScale(15, 60)).toBe(0.25);
+    expect(getDraftTimerBarScale(90, 30)).toBe(1);
+    expect(getDraftTimerBarScale(-5, 30)).toBe(0);
+    expect(getDraftTimerBarScale(10, 0)).toBe(0);
+  });
+
+  it("keeps local asset fallbacks available for missing splashes, roles, and logos", () => {
+    const baseSnapshot = createSnapshot();
+    const snapshot = createSnapshot({
+      teams: baseSnapshot.teams.map((team) => ({
+        ...team,
+        logoAssetPath: undefined,
+        logoUrl: undefined
+      })),
+      adapters: [
+        {
+          ...baseSnapshot.adapters[0],
+          heroes: heroes.map((hero) =>
+            hero.id === "hero_ember"
+              ? {
+                  ...hero,
+                  gameCode: "lol",
+                  metadata: {
+                    dataDragonId: "Aatrox"
+                  }
+                }
+              : hero
+          )
+        }
+      ]
+    });
+    const markup = renderDraft("/overlay/draft/match_grand-final", "", createClientState(snapshot));
+
+    expect(markup).toContain('data-logo-source="fallback"');
+    expect(markup).toContain("draft-neutral-crest");
+    expect(markup).toContain('src="/assets/hero-splashes/lol/Aatrox.jpg"');
+    expect(markup).toContain('src="/assets/role-icons/lol/position-top.svg"');
+    expect(markup).toContain("draft-pick-art__fallback");
+    expect(markup).toContain("draft-role-icon__fallback");
+  });
+
+  it("omits banned on-air state and phase labels on the normal route", () => {
     const markup = renderDraft();
 
-    expect(markup).toContain("Blue Meteors");
-    expect(markup).toContain("Red Titans");
-    expect(markup).toContain('data-team-logo="fallback"');
-    expect(markup).toContain('data-team-logo="asset"');
+    [
+      "PENDING",
+      "BLUE BAN",
+      "RED BAN",
+      "PICK 1",
+      "Draft Status",
+      "Active Side",
+      "Manual skip",
+      "Skipped",
+      "Red Ban 1"
+    ].forEach((label) => {
+      expect(markup).not.toContain(label);
+    });
+  });
+
+  it("renders local center team logo assets without visible team-name labels", () => {
+    const markup = renderDraft();
+
+    expect(markup).toContain('data-logo-source="asset"');
+    expect(markup).toContain('src="/assets/team-logos/blue.svg"');
+    expect(markup).toContain('src="/assets/team-logos/red.svg"');
+    expect(markup).not.toContain("Blue Meteors");
+    expect(markup).not.toContain("Red Titans");
   });
 
   it("exposes match presentation metadata in the draft overlay view model", () => {
@@ -554,32 +619,61 @@ describe("draft overlay", () => {
     });
   });
 
-  it("renders blue and red bans and picks from draft actions", () => {
+  it("renders the approved ban strips and pick rail from draft actions", () => {
     const markup = renderDraft();
 
-    expect(markup).toContain("Blue Bans");
-    expect(markup).toContain("Red Bans");
-    expect(markup).toContain("Blue Picks");
-    expect(markup).toContain("Red Picks");
-    expect(markup).toContain("Moon Sentinel");
-    expect(markup).toContain("Solar Warden");
-    expect(markup).toContain("Ember Guard");
-    expect(markup).toContain("Oath Keeper");
+    expect(markup.match(/data-slot-kind="ban"/g)).toHaveLength(10);
+    expect(markup.match(/data-slot-kind="pick"/g)).toHaveLength(10);
+    expect(markup).toContain('data-slot-state="done"');
+    expect(markup).toContain('data-slot-state="active"');
+    expect(markup).toContain('data-slot-state="picked"');
+    expect(markup).toContain('data-slot-state="empty"');
+    expect(markup).not.toContain("Moon Sentinel");
+    expect(markup).not.toContain("Solar Warden");
+    expect(markup).not.toContain("Ember Guard");
+    expect(markup).not.toContain("Oath Keeper");
   });
 
-  it("makes pending, hover, and locked states distinguishable", () => {
+  it("makes empty, hover, picked, done, active, and skipped visual states distinguishable", () => {
+    const baseSnapshot = createSnapshot();
+    const snapshot = createSnapshot({
+      drafts: {
+        draft_001: {
+          ...baseSnapshot.drafts.draft_001,
+          currentPhaseIndex: 6,
+          currentPhase: phases[6],
+          currentActionIds: ["pick-blue-2:slot-0"],
+          timer: {
+            isRunning: true,
+            remainingSeconds: 18,
+            originalSeconds: 30,
+            phaseStartedAt: timestamp
+          },
+          actions: createActions().map((action) =>
+            action.id === "pick-blue-2:slot-0"
+              ? {
+                  ...action,
+                  status: "HOVER",
+                  heroId: "hero_sun",
+                  hoveredAt: timestamp
+                }
+              : action
+          )
+        }
+      }
+    });
     const markup = renderDraft();
+    const hoverMarkup = renderDraft("/overlay/draft/match_grand-final", "", createClientState(snapshot));
 
-    expect(markup).toContain('data-slot-status="PENDING"');
-    expect(markup).toContain('data-slot-status="HOVER"');
-    expect(markup).toContain('data-slot-status="LOCKED"');
-    expect(markup).toContain('data-slot-status="SKIPPED"');
-    expect(markup).toContain("draft-slot--pending");
-    expect(markup).toContain("draft-slot--hover");
-    expect(markup).toContain("draft-slot--locked");
-    expect(markup).toContain('data-hero-icon="empty"');
+    expect(markup).toContain('data-slot-state="done"');
+    expect(markup).toContain('data-slot-state="active"');
+    expect(markup).toContain('data-slot-state="skipped"');
+    expect(markup).toContain('data-slot-state="picked"');
+    expect(markup).toContain('data-slot-state="empty"');
+    expect(hoverMarkup).toContain('data-slot-state="hover"');
     expect(markup).not.toContain("Manual skip");
     expect(markup).not.toContain(">Skipped<");
+    expect(markup).not.toContain("PENDING");
   });
 
   it("maps a skipped ban to an empty no-label overlay slot", () => {
@@ -589,8 +683,6 @@ describe("draft overlay", () => {
     expect(skippedBan).toMatchObject({
       isNoBan: true,
       label: "",
-      statusLabel: "",
-      sublabel: "",
       action: expect.objectContaining({
         type: "BAN",
         status: "SKIPPED",
@@ -603,10 +695,11 @@ describe("draft overlay", () => {
     const snapshot = createCompleteSnapshot();
     const markup = renderDraft("/overlay/draft/match_grand-final", "", createClientState(snapshot));
 
-    expect(markup).toContain('data-draft-status="COMPLETE"');
-    expect(markup).toContain("Draft Complete");
-    expect(markup).toContain("Storm Caller");
-    expect(markup).toContain("River Guide");
+    expect(markup).toContain('data-draft-status="complete"');
+    expect(markup).not.toContain('data-testid="draft-turn-timer"');
+    expect(markup).not.toContain("Draft Complete");
+    expect(markup).not.toContain("Storm Caller");
+    expect(markup).not.toContain("River Guide");
   });
 
   it("renders locked pick order when no final lineup exists", () => {
@@ -850,8 +943,8 @@ describe("draft overlay", () => {
 
     expect(markup).toContain("Draft state unavailable");
     expect(markup).toContain("No draft will be created from this overlay");
-    expect(markup).toContain("Blue Meteors");
-    expect(markup).toContain("Red Titans");
+    expect(markup).not.toContain("Blue Meteors");
+    expect(markup).not.toContain("Red Titans");
   });
 
   it("uses safe defaults when presentation metadata is missing", () => {
@@ -931,8 +1024,8 @@ describe("draft overlay", () => {
     expect(normalMarkup).not.toContain("Draft Diagnostics");
     expect(normalMarkup).not.toContain("Draft ID");
     expect(normalMarkup).not.toContain("Revision");
-    expect(normalMarkup).not.toContain("Showmatch Finals");
-    expect(normalMarkup).not.toContain("Patch 26.10");
+    expect(normalMarkup).toContain("SHOWMATCH FINALS / GAME 2");
+    expect(normalMarkup).toContain("PATCH 26.10");
     expect(debugMarkup).toContain("Draft Diagnostics");
     expect(debugMarkup).toContain("draft_001");
     expect(debugMarkup).toContain("Red Ban 1");
